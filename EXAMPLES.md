@@ -1,0 +1,559 @@
+# Excel Upload 프로그램 예제 모음
+
+## 목차
+1. [기본 예제 - Z_SIMPLE_EXCEL_UPLOAD](#예제-1-기본-excel-upload)
+2. [고급 예제 - 데이터 검증 포함](#예제-2-데이터-검증-포함)
+3. [BAPI 사용 예제](#예제-3-bapi-사용)
+4. [대용량 데이터 처리](#예제-4-대용량-데이터-처리)
+5. [멀티 시트 처리](#예제-5-멀티-시트-처리)
+
+---
+
+## 예제 1: 기본 Excel Upload
+
+### 시나리오
+자재 마스터 데이터를 Excel에서 읽어 커스텀 테이블(ZMDAT9012)에 저장
+
+### Excel 형식
+| A | B | C | D | E | F | G | H | I |
+|---|---|---|---|---|---|---|---|---|
+| 자재코드 | 자재유형 | 자재내역 | 자재그룹 | 기본단위 | 플랜트 | MRP컨트롤러 | 로트키 | 고정로트수량 |
+| 100001 | ROH | 원자재A | 0001 | EA | 1000 | 001 | EX | 100 |
+
+### 프로그램
+이미 제공된 `Z_SIMPLE_EXCEL_UPLOAD` 참조
+
+### 사용법
+1. SE38에서 Z_SIMPLE_EXCEL_UPLOAD 실행
+2. Excel 파일 선택 (F4 도움말 사용)
+3. F8 실행
+4. 결과 확인 (ZMDAT9012 테이블)
+
+---
+
+## 예제 2: 데이터 검증 포함
+
+### 시나리오
+고객 마스터 데이터 업로드 시 필수 항목 및 형식 검증
+
+### 코드 예제
+
+```abap
+*&---------------------------------------------------------------------*
+*& Report Z_CUSTOMER_EXCEL_UPLOAD
+*&---------------------------------------------------------------------*
+REPORT Z_CUSTOMER_EXCEL_UPLOAD.
+
+TYPE-POOLS: TRUXS, SLIS.
+
+TYPES: BEGIN OF TY_EXCEL,
+         KUNNR TYPE KUNNR,    "고객코드
+         NAME1 TYPE NAME1,    "고객명
+         STRAS TYPE STRAS,    "거리/주소
+         ORT01 TYPE ORT01,    "도시
+         PSTLZ TYPE PSTLZ,    "우편번호
+         LAND1 TYPE LAND1,    "국가
+         TELF1 TYPE TELF1,    "전화번호
+         MSGTY TYPE BAPI_MTYPE,
+         MSGTX TYPE BAPI_MSG,
+       END OF TY_EXCEL.
+
+DATA: GT_EXCEL TYPE STANDARD TABLE OF TY_EXCEL,
+      GS_EXCEL TYPE TY_EXCEL.
+
+DATA: GT_FCAT   TYPE LVC_T_FCAT,
+      GS_FCAT   TYPE LVC_S_FCAT,
+      GS_LAYOUT TYPE LVC_S_LAYO.
+
+PARAMETERS: P_FILE TYPE RLGRAP-FILENAME OBLIGATORY.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_FILE.
+  CALL FUNCTION 'F4_FILENAME'
+    IMPORTING
+      FILE_NAME = P_FILE.
+
+START-OF-SELECTION.
+  PERFORM UPLOAD_EXCEL.
+  PERFORM DISPLAY_ALV.
+
+FORM UPLOAD_EXCEL.
+  DATA: LT_RAW TYPE TABLE OF ALSMEX_TABLINE,
+        LS_RAW TYPE ALSMEX_TABLINE.
+
+  CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+    EXPORTING
+      FILENAME    = P_FILE
+      I_BEGIN_COL = 1
+      I_BEGIN_ROW = 3
+      I_END_COL   = 7
+      I_END_ROW   = 100000
+    TABLES
+      INTERN      = LT_RAW.
+
+  LOOP AT LT_RAW INTO LS_RAW.
+    CASE LS_RAW-COL.
+      WHEN 1. GS_EXCEL-KUNNR = LS_RAW-VALUE.
+      WHEN 2. GS_EXCEL-NAME1 = LS_RAW-VALUE.
+      WHEN 3. GS_EXCEL-STRAS = LS_RAW-VALUE.
+      WHEN 4. GS_EXCEL-ORT01 = LS_RAW-VALUE.
+      WHEN 5. GS_EXCEL-PSTLZ = LS_RAW-VALUE.
+      WHEN 6. GS_EXCEL-LAND1 = LS_RAW-VALUE.
+      WHEN 7. GS_EXCEL-TELF1 = LS_RAW-VALUE.
+    ENDCASE.
+
+    AT END OF ROW.
+      PERFORM VALIDATE_CUSTOMER.
+      APPEND GS_EXCEL TO GT_EXCEL.
+      CLEAR GS_EXCEL.
+    ENDAT.
+  ENDLOOP.
+
+  " 에러가 없는 데이터만 저장
+  PERFORM SAVE_CUSTOMERS.
+ENDFORM.
+
+FORM VALIDATE_CUSTOMER.
+  " 1. 필수 필드 검증
+  IF GS_EXCEL-KUNNR IS INITIAL.
+    GS_EXCEL-MSGTY = 'E'.
+    GS_EXCEL-MSGTX = '고객코드는 필수입력입니다.'.
+    RETURN.
+  ENDIF.
+
+  IF GS_EXCEL-NAME1 IS INITIAL.
+    GS_EXCEL-MSGTY = 'E'.
+    GS_EXCEL-MSGTX = '고객명은 필수입력입니다.'.
+    RETURN.
+  ENDIF.
+
+  " 2. 형식 검증
+  IF STRLEN( GS_EXCEL-KUNNR ) > 10.
+    GS_EXCEL-MSGTY = 'E'.
+    GS_EXCEL-MSGTX = '고객코드는 10자리 이하여야 합니다.'.
+    RETURN.
+  ENDIF.
+
+  " 3. 국가 코드 검증
+  IF GS_EXCEL-LAND1 IS NOT INITIAL.
+    SELECT SINGLE LAND1 FROM T005
+      INTO @DATA(LV_LAND1)
+      WHERE LAND1 = @GS_EXCEL-LAND1.
+
+    IF SY-SUBRC <> 0.
+      GS_EXCEL-MSGTY = 'E'.
+      GS_EXCEL-MSGTX = |유효하지 않은 국가코드: { GS_EXCEL-LAND1 }|.
+      RETURN.
+    ENDIF.
+  ENDIF.
+
+  " 4. 중복 검증
+  SELECT SINGLE KUNNR FROM KNA1
+    INTO @DATA(LV_KUNNR)
+    WHERE KUNNR = @GS_EXCEL-KUNNR.
+
+  IF SY-SUBRC = 0.
+    GS_EXCEL-MSGTY = 'W'.
+    GS_EXCEL-MSGTX = '이미 존재하는 고객코드입니다.'.
+    RETURN.
+  ENDIF.
+
+  " 검증 통과
+  GS_EXCEL-MSGTY = 'S'.
+  GS_EXCEL-MSGTX = '검증 완료'.
+ENDFORM.
+
+FORM SAVE_CUSTOMERS.
+  DATA: LT_SAVE TYPE TABLE OF ZCUSTOMER,
+        LS_SAVE LIKE LINE OF LT_SAVE,
+        LV_CNT  TYPE I.
+
+  " 성공 메시지가 있는 데이터만 저장
+  LOOP AT GT_EXCEL INTO GS_EXCEL WHERE MSGTY = 'S'.
+    MOVE-CORRESPONDING GS_EXCEL TO LS_SAVE.
+    APPEND LS_SAVE TO LT_SAVE.
+  ENDLOOP.
+
+  IF LT_SAVE IS NOT INITIAL.
+    MODIFY ZCUSTOMER FROM TABLE LT_SAVE.
+
+    IF SY-SUBRC = 0.
+      COMMIT WORK.
+      LV_CNT = LINES( LT_SAVE ).
+      MESSAGE |{ LV_CNT }건이 저장되었습니다.| TYPE 'S'.
+    ELSE.
+      ROLLBACK WORK.
+      MESSAGE '데이터 저장 중 오류가 발생했습니다.' TYPE 'E'.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+
+FORM DISPLAY_ALV.
+  PERFORM BUILD_FIELDCAT.
+
+  GS_LAYOUT-ZEBRA      = 'X'.
+  GS_LAYOUT-CWIDTH_OPT = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      I_CALLBACK_PROGRAM = SY-REPID
+      IS_LAYOUT          = GS_LAYOUT
+      IT_FIELDCAT        = GT_FCAT
+    TABLES
+      T_OUTTAB           = GT_EXCEL.
+ENDFORM.
+
+FORM BUILD_FIELDCAT.
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'KUNNR'.
+  GS_FCAT-SELTEXT_L = '고객코드'.
+  GS_FCAT-COL_POS   = 1.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'NAME1'.
+  GS_FCAT-SELTEXT_L = '고객명'.
+  GS_FCAT-COL_POS   = 2.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'STRAS'.
+  GS_FCAT-SELTEXT_L = '주소'.
+  GS_FCAT-COL_POS   = 3.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'ORT01'.
+  GS_FCAT-SELTEXT_L = '도시'.
+  GS_FCAT-COL_POS   = 4.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'PSTLZ'.
+  GS_FCAT-SELTEXT_L = '우편번호'.
+  GS_FCAT-COL_POS   = 5.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'LAND1'.
+  GS_FCAT-SELTEXT_L = '국가'.
+  GS_FCAT-COL_POS   = 6.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'TELF1'.
+  GS_FCAT-SELTEXT_L = '전화번호'.
+  GS_FCAT-COL_POS   = 7.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'MSGTY'.
+  GS_FCAT-SELTEXT_L = '메시지타입'.
+  GS_FCAT-COL_POS   = 8.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'MSGTX'.
+  GS_FCAT-SELTEXT_L = '메시지'.
+  GS_FCAT-COL_POS   = 9.
+  APPEND GS_FCAT TO GT_FCAT.
+ENDFORM.
+```
+
+---
+
+## 예제 3: BAPI 사용
+
+### 시나리오
+표준 BAPI를 사용하여 자재 마스터 생성
+
+### 코드 스니펫
+
+```abap
+FORM PROCESS_DATA.
+  DATA: LS_HEADDATA TYPE BAPIMATHEAD,
+        LS_CLIENTDATA TYPE BAPI_MARA,
+        LS_RETURN TYPE BAPIRET2.
+
+  LOOP AT GT_EXCEL INTO GS_EXCEL WHERE MSGTY <> 'E'.
+    " BAPI 입력 데이터 설정
+    CLEAR: LS_HEADDATA, LS_CLIENTDATA, LS_RETURN.
+
+    LS_HEADDATA-MATERIAL = GS_EXCEL-MATNR.
+    LS_HEADDATA-MAT_TYPE = GS_EXCEL-MTART.
+
+    LS_CLIENTDATA-MATL_DESC = GS_EXCEL-MAKTX.
+    LS_CLIENTDATA-MATL_GROUP = GS_EXCEL-MATKL.
+    LS_CLIENTDATA-BASE_UOM = GS_EXCEL-MEINS.
+
+    " BAPI 호출
+    CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+      EXPORTING
+        HEADDATA       = LS_HEADDATA
+        CLIENTDATA     = LS_CLIENTDATA
+      IMPORTING
+        RETURN         = LS_RETURN.
+
+    " 결과 처리
+    IF LS_RETURN-TYPE = 'E' OR LS_RETURN-TYPE = 'A'.
+      GS_EXCEL-MSGTY = LS_RETURN-TYPE.
+      GS_EXCEL-MSGTX = LS_RETURN-MESSAGE.
+      
+      " 에러 발생시 롤백
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+    ELSE.
+      GS_EXCEL-MSGTY = 'S'.
+      GS_EXCEL-MSGTX = '자재 생성 완료'.
+      
+      " 성공시 커밋
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          WAIT = 'X'.
+    ENDIF.
+
+    MODIFY GT_EXCEL FROM GS_EXCEL.
+  ENDLOOP.
+ENDFORM.
+```
+
+---
+
+## 예제 4: 대용량 데이터 처리
+
+### 시나리오
+10,000건 이상의 데이터를 배치 단위로 처리
+
+### 코드 스니펫
+
+```abap
+FORM PROCESS_DATA.
+  CONSTANTS: LC_BATCH_SIZE TYPE I VALUE 1000.
+
+  DATA: LT_BATCH TYPE TABLE OF ZMDAT9012,
+        LS_BATCH LIKE LINE OF LT_BATCH,
+        LV_TOTAL TYPE I,
+        LV_PROCESSED TYPE I VALUE 0.
+
+  " 전체 데이터 수
+  DESCRIBE TABLE GT_EXCEL LINES LV_TOTAL.
+
+  MESSAGE |총 { LV_TOTAL }건 처리 시작...| TYPE 'S'.
+
+  LOOP AT GT_EXCEL INTO GS_EXCEL WHERE MSGTY <> 'E'.
+    MOVE-CORRESPONDING GS_EXCEL TO LS_BATCH.
+    APPEND LS_BATCH TO LT_BATCH.
+
+    " 배치 크기만큼 모이면 처리
+    IF LINES( LT_BATCH ) >= LC_BATCH_SIZE.
+      PERFORM PROCESS_BATCH USING LT_BATCH.
+      ADD LINES( LT_BATCH ) TO LV_PROCESSED.
+      CLEAR LT_BATCH.
+
+      " 진행률 표시
+      DATA(LV_PERCENT) = ( LV_PROCESSED * 100 ) / LV_TOTAL.
+      MESSAGE |처리 중... { LV_PERCENT }% ({ LV_PROCESSED } / { LV_TOTAL })| TYPE 'S'.
+    ENDIF.
+  ENDLOOP.
+
+  " 남은 데이터 처리
+  IF LT_BATCH IS NOT INITIAL.
+    PERFORM PROCESS_BATCH USING LT_BATCH.
+    ADD LINES( LT_BATCH ) TO LV_PROCESSED.
+  ENDIF.
+
+  MESSAGE |처리 완료: { LV_PROCESSED }건| TYPE 'S'.
+ENDFORM.
+
+FORM PROCESS_BATCH USING PT_BATCH TYPE ANY TABLE.
+  MODIFY ZMDAT9012 FROM TABLE PT_BATCH.
+
+  IF SY-SUBRC = 0.
+    COMMIT WORK.
+  ELSE.
+    ROLLBACK WORK.
+    MESSAGE '배치 처리 중 오류 발생' TYPE 'E'.
+  ENDIF.
+ENDFORM.
+```
+
+---
+
+## 예제 5: 멀티 시트 처리
+
+### 시나리오
+하나의 Excel 파일에서 여러 시트의 데이터 읽기
+
+### 코드 스니펫
+
+```abap
+FORM UPLOAD_EXCEL.
+  " Sheet 1: 헤더 정보
+  PERFORM UPLOAD_SHEET USING 1 'Header'.
+
+  " Sheet 2: 상세 정보
+  PERFORM UPLOAD_SHEET USING 2 'Details'.
+ENDFORM.
+
+FORM UPLOAD_SHEET USING PV_SHEET TYPE I
+                        PV_NAME  TYPE STRING.
+  DATA: LT_RAW TYPE TABLE OF ALSMEX_TABLINE,
+        LS_RAW TYPE ALSMEX_TABLINE.
+
+  " OLE를 사용한 Excel 읽기
+  DATA: LO_EXCEL TYPE OLE2_OBJECT,
+        LO_WORKBOOK TYPE OLE2_OBJECT,
+        LO_SHEET TYPE OLE2_OBJECT,
+        LO_CELL TYPE OLE2_OBJECT.
+
+  " Excel 애플리케이션 생성
+  CREATE OBJECT LO_EXCEL 'Excel.Application'.
+  SET PROPERTY OF LO_EXCEL 'Visible' = 0.
+
+  " 워크북 열기
+  CALL METHOD OF LO_EXCEL 'Workbooks' = LO_WORKBOOK.
+  CALL METHOD OF LO_WORKBOOK 'Open'
+    EXPORTING
+      #1 = P_FILE.
+
+  " 시트 선택
+  CALL METHOD OF LO_EXCEL 'Worksheets' = LO_SHEET
+    EXPORTING
+      #1 = PV_SHEET.
+  CALL METHOD OF LO_SHEET 'Activate'.
+
+  " 데이터 읽기
+  DATA: LV_ROW TYPE I VALUE 3,
+        LV_COL TYPE I,
+        LV_VALUE TYPE STRING.
+
+  DO 100000 TIMES.
+    LV_COL = 1.
+    CLEAR GS_EXCEL.
+
+    DO 10 TIMES.
+      CALL METHOD OF LO_EXCEL 'Cells' = LO_CELL
+        EXPORTING
+          #1 = LV_ROW
+          #2 = LV_COL.
+
+      GET PROPERTY OF LO_CELL 'Value' = LV_VALUE.
+
+      IF LV_COL = 1 AND LV_VALUE IS INITIAL.
+        EXIT.  " 빈 행이면 종료
+      ENDIF.
+
+      " 데이터 매핑
+      CASE LV_COL.
+        WHEN 1. GS_EXCEL-FIELD1 = LV_VALUE.
+        WHEN 2. GS_EXCEL-FIELD2 = LV_VALUE.
+        " ...
+      ENDCASE.
+
+      ADD 1 TO LV_COL.
+    ENDDO.
+
+    IF GS_EXCEL-FIELD1 IS INITIAL.
+      EXIT.
+    ENDIF.
+
+    APPEND GS_EXCEL TO GT_EXCEL.
+    ADD 1 TO LV_ROW.
+  ENDDO.
+
+  " Excel 종료
+  CALL METHOD OF LO_WORKBOOK 'Close'
+    EXPORTING
+      #1 = 0.
+  CALL METHOD OF LO_EXCEL 'Quit'.
+  FREE: LO_EXCEL, LO_WORKBOOK, LO_SHEET, LO_CELL.
+
+  MESSAGE |시트 "{ PV_NAME }" 읽기 완료| TYPE 'S'.
+ENDFORM.
+```
+
+---
+
+## 추가 팁
+
+### 1. 에러 로그 저장
+```abap
+" 에러 로그를 별도 테이블에 저장
+FORM SAVE_ERROR_LOG.
+  DATA: LT_LOG TYPE TABLE OF ZERROR_LOG,
+        LS_LOG LIKE LINE OF LT_LOG.
+
+  LOOP AT GT_EXCEL INTO GS_EXCEL WHERE MSGTY = 'E'.
+    LS_LOG-MANDT = SY-MANDT.
+    LS_LOG-ERDAT = SY-DATUM.
+    LS_LOG-ERZET = SY-UZEIT.
+    LS_LOG-ERNAM = SY-UNAME.
+    LS_LOG-MSGTY = GS_EXCEL-MSGTY.
+    LS_LOG-MSGTX = GS_EXCEL-MSGTX.
+    LS_LOG-DATA  = GS_EXCEL.
+    APPEND LS_LOG TO LT_LOG.
+  ENDLOOP.
+
+  IF LT_LOG IS NOT INITIAL.
+    MODIFY ZERROR_LOG FROM TABLE LT_LOG.
+    COMMIT WORK.
+  ENDIF.
+ENDFORM.
+```
+
+### 2. 진행 상황 표시
+```abap
+" SAP GUI Progress Indicator 사용
+DATA: LV_PERCENT TYPE I,
+      LV_TEXT TYPE STRING.
+
+LOOP AT GT_EXCEL INTO GS_EXCEL.
+  " 처리 로직
+  ...
+
+  " 진행률 계산
+  LV_PERCENT = ( SY-TABIX * 100 ) / LINES( GT_EXCEL ).
+  LV_TEXT = |처리 중: { SY-TABIX } / { LINES( GT_EXCEL ) }|.
+
+  CALL FUNCTION 'SAPGUI_PROGRESS_INDICATOR'
+    EXPORTING
+      PERCENTAGE = LV_PERCENT
+      TEXT       = LV_TEXT.
+ENDLOOP.
+```
+
+### 3. 롤백 포인트 설정
+```abap
+" 대용량 처리시 롤백 포인트 활용
+DATA: LV_ROLLBACK_ID TYPE STRING.
+
+LOOP AT GT_EXCEL INTO GS_EXCEL.
+  " 트랜잭션 시작점 설정
+  CALL FUNCTION 'DB_ROLLBACK_POINT_SET'
+    IMPORTING
+      ROLLBACK_ID = LV_ROLLBACK_ID.
+
+  " 데이터 처리
+  PERFORM PROCESS_RECORD.
+
+  IF GS_EXCEL-MSGTY = 'E'.
+    " 에러 발생시 롤백
+    CALL FUNCTION 'DB_ROLLBACK_POINT_ROLLBACK'
+      EXPORTING
+        ROLLBACK_ID = LV_ROLLBACK_ID.
+  ELSE.
+    " 성공시 커밋
+    COMMIT WORK.
+  ENDIF.
+ENDLOOP.
+```
+
+---
+
+## 마무리
+
+이 예제들은 Z_SIMPLE_EXCEL_UPLOAD의 표준 형식을 기반으로 작성되었습니다.
+실제 프로젝트에 맞게 수정하여 사용하시기 바랍니다.
+
+**참고:**
+- 모든 예제는 테스트 환경에서 먼저 검증 필요
+- 프로덕션 환경 적용 전 백업 필수
+- 권한 설정 확인 필수
