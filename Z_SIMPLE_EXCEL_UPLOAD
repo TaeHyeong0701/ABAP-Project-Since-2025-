@@ -1,0 +1,104 @@
+
+*&---------------------------------------------------------------------*
+*& Report Z_SIMPLE_EXCEL_UPLOAD
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT Z_SIMPLE_EXCEL_UPLOAD.
+
+TYPE-POOLS: TRUXS, SLIS.
+
+"=========================
+" TYPE 정의
+"=========================
+TYPES: BEGIN OF TY_EXCEL,
+         MATNR      TYPE MATNR,   "A열 - 자재코드
+         MTART      TYPE MTART,   "B열 - 자재유형
+         MAKTX      TYPE MAKTX,   "C열 - 자재내역
+         MATKL      TYPE MATKL,   "D열 - 자재그룹
+         MEINS      TYPE MEINS,   "E열 - 기본단위
+         WERKS      TYPE WERKS_D, "F열 - 플랜트
+         MRP_CTRLER TYPE DISPO, "G열 - MRP 컨트롤러
+         LOTSIZEKEY TYPE DISLS,  "H열 - 로트 키
+         FIXED_LOT  TYPE BSTFE,  "I열 - 고정로트수량
+         MSGTY      TYPE BAPI_MTYPE,
+         MSGTX      TYPE BAPI_MSG,
+
+
+       END OF TY_EXCEL.
+
+DATA: GT_EXCEL TYPE STANDARD TABLE OF TY_EXCEL,
+      GS_EXCEL TYPE TY_EXCEL.
+
+" ALV 관련 변수
+DATA: GR_ALV       TYPE REF TO CL_GUI_ALV_GRID,
+      GR_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER.
+
+DATA: GT_FCAT   TYPE LVC_T_FCAT,
+      GS_FCAT   TYPE LVC_S_FCAT,
+      GS_LAYOUT TYPE LVC_S_LAYO.
+
+PARAMETERS: P_FILE TYPE RLGRAP-FILENAME OBLIGATORY.
+
+"=========================
+" SELECTION SCREEN
+"=========================
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_FILE.
+  CALL FUNCTION 'F4_FILENAME'
+    IMPORTING
+      FILE_NAME = P_FILE.
+
+  "=========================
+  " EXCEL 파일 -> 내부테이블 변환
+  "=========================
+
+START-OF-SELECTION.
+  PERFORM UPLOAD_EXCEL.
+"=========================
+" EXCEL 업로드 처리
+"=========================
+FORM UPLOAD_EXCEL.
+  DATA: LT_RAW TYPE TABLE OF ALSMEX_TABLINE,
+        LS_RAW TYPE ALSMEX_TABLINE.
+
+  CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+    EXPORTING
+      FILENAME    = P_FILE
+      I_BEGIN_COL = 1
+      I_BEGIN_ROW = 3
+      I_END_COL   = 10
+      I_END_ROW   = 100000
+    TABLES
+      INTERN      = LT_RAW.
+
+  LOOP AT LT_RAW INTO LS_RAW.
+    CASE LS_RAW-COL.
+      WHEN 1. GS_EXCEL-MATNR = LS_RAW-VALUE.
+*      WHEN 2. GS_EXCEL-MTART = LS_RAW-VALUE.
+*      WHEN 3. GS_EXCEL-MAKTX = LS_RAW-VALUE.
+*      WHEN 4. GS_EXCEL-MATKL = LS_RAW-VALUE.
+*      WHEN 5. GS_EXCEL-MEINS = LS_RAW-VALUE.
+*      WHEN 6. GS_EXCEL-WERKS = LS_RAW-VALUE.
+*      WHEN 7.
+*        GS_EXCEL-MRP_CTRLER = LS_RAW-VALUE.
+*      WHEN 8. GS_EXCEL-LOTSIZEKEY = LS_RAW-VALUE.
+*      WHEN 9. GS_EXCEL-FIXED_LOT = LS_RAW-VALUE.
+    ENDCASE.
+    AT END OF ROW.
+      APPEND GS_EXCEL TO GT_EXCEL.
+      CLEAR GS_EXCEL.
+    ENDAT.
+  ENDLOOP.
+
+  " 데이터 입력
+  DATA : LT_ZMDAT9012 TYPE TABLE OF ZMDAT9012,
+        LS_ZMDAT9012 LIKE LINE OF LT_ZMDAT9012.
+
+  " 저장용 인터널 테이블 입력
+  MOVE-CORRESPONDING GT_EXCEL[] TO LT_ZMDAT9012[].
+
+  " 테이블 업데이트
+  MODIFY ZMDAT9012 FROM TABLE LT_ZMDAT9012[].
+
+ENDFORM.
