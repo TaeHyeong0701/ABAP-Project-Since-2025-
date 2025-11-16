@@ -1,0 +1,91 @@
+*&---------------------------------------------------------------------*
+*& Report YPROFILELING
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT yprofileling.
+
+PARAMETERS: p_tab TYPE tabname OBLIGATORY.
+
+" DDIC 필드 정보
+DATA: lt_dfies TYPE TABLE OF dfies,
+      ls_dfie  TYPE dfies.
+
+" 동적 내부테이블/워크에어리어 레퍼런스
+DATA: gr_table TYPE REF TO data.
+FIELD-SYMBOLS: <gt>   TYPE ANY TABLE,
+               <wa>   TYPE any,
+               <comp> TYPE any.
+
+" 필드명 리스트 (순서보존)
+DATA: it_fields TYPE STANDARD TABLE OF string WITH NON-UNIQUE KEY table_line.
+DATA: lv_field  TYPE string.
+
+
+" 제어변수
+DATA: lv_rows       TYPE i,
+      lv_found_cnt  TYPE i VALUE 0,
+      lv_total_cols TYPE i.
+
+" 1) 테이블의 필드 메타정보 조회 (DDIF_FIELDINFO_GET)
+CLEAR: lt_dfies.
+CALL FUNCTION 'DDIF_FIELDINFO_GET'
+  EXPORTING
+    tabname   = p_tab
+    langu     = sy-langu
+  TABLES
+    dfies_tab = lt_dfies
+  EXCEPTIONS
+    OTHERS    = 1.
+IF sy-subrc <> 0 OR lt_dfies IS INITIAL.
+  MESSAGE |테이블 { p_tab }의 필드 정보를 가져오지 못했습니다.| TYPE 'E'.
+  EXIT.
+ENDIF.
+
+" 필드명만 추출 (대문자 정규화)
+LOOP AT lt_dfies INTO ls_dfie.
+  " DFIES-FIELDNAME 은 이미 대문자임
+  APPEND ls_dfie-fieldname TO it_fields.
+ENDLOOP.
+
+lv_total_cols = lines( it_fields ).
+
+" 값 읽기
+DATA: lv_where TYPE string.
+DATA: Gt_fields TYPE STANDARD TABLE OF string WITH NON-UNIQUE KEY table_line,
+      gs_fields LIKE LINE OF gt_fields.
+LOOP AT it_fields INTO DATA(ls_fields).
+
+*CONCATENATE '|' ls_fields 'NE abap_false|' INTO lv_where separated by space.
+  IF ls_fields NE 'MANDT'.
+    lv_where = |{ ls_fields } NE SPACE|.
+    SELECT COUNT(*)
+      FROM (p_tab)
+      WHERE (lv_where).
+    IF sy-subrc = 0.
+
+      MOVE ls_fields TO gS_fields.
+      APPEND gs_fields TO gt_fields .
+      CLEAR : gs_fields.
+
+
+    ENDIF.
+  ENDIF.
+
+ENDLOOP.
+
+BREAK-POINT.
+
+
+*DATA : lt_components TYPE cl_abap_structdescr=>component_table.
+*" 2) 동적 내부테이블 생성 (TABLE OF (p_tabname))
+*TRY.
+*    CREATE DATA gr_table TYPE TABLE OF (p_tabname).
+*  CATCH cx_sy_create_data_error INTO DATA(lx_cd).
+*    MESSAGE |동적 내부테이블 생성 실패: { lx_cd->get_text( ) }| TYPE 'E'.
+*    EXIT.
+*ENDTRY.
+*
+*ASSIGN gr_table->* TO <gt>.
+*IF sy-subrc <> 0.
+*  MESSAGE '동적 내부테이블 할당 실패'
