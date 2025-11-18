@@ -1,0 +1,1263 @@
+*&---------------------------------------------------------------------*
+*& Report YUPLOAD_MATERIAL_MASTER
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT YUPLOAD_MATERIAL_MASTER.
+
+*"=========================
+*" TYPE 정의
+*"=========================
+*TYPES: BEGIN OF ty_excel,
+*         matnr      TYPE matnr,   "A열 - 자재코드
+*         mtart      TYPE mtart,   "B열 - 자재유형
+*         maktx      TYPE maktx,   "C열 - 자재내역
+*         matkl      TYPE matkl,   "D열 - 자재그룹
+*         meins      TYPE meins,   "E열 - 기본단위
+*         werks      TYPE werks_d, "F열 - 플랜트
+*         mrp_ctrler TYPE dispo, "G열 - MRP 컨트롤러
+*         lotsizekey TYPE disls,  "H열 - 로트 키
+*         fixed_lot  TYPE bstfe,  "I열 - 고정로트수량
+*         msgty      TYPE bapi_mtype,
+*         msgtx      TYPE bapi_msg,
+*
+*
+*       END OF ty_excel.
+
+TYPES: BEGIN OF TY_EXCEL,
+         " 자재 헤더 정보
+         MATNR      TYPE MATNR,        "자재번호
+         MTART      TYPE MTART,        "자재유형
+         MBRSH      TYPE MBRSH,        "산업분야
+
+         " 일반 데이터 (MARA)
+         MATKL      TYPE MATKL,        "자재그룹
+         MEINS      TYPE MEINS,        "기본단위
+         GEWEI      TYPE GEWEI,        "중량단위
+         SPART      TYPE SPART,        "제품군
+         PRDHA      TYPE PRODH_D,      "제품계층
+         XCHPF      TYPE XCHPF,        "배치관리
+         BISMT      TYPE BISMT,        "구자재번호
+         EXTWG      TYPE EXTWG,        "외부자재그룹
+         MFRPN      TYPE MFRPN,        "제조업체부품번호
+         MTPOS_MARA TYPE MTPOS_MARA,   "자재범주
+
+         " 영업 데이터 (MVKE)
+         VKORG      TYPE VKORG,        "영업조직
+         VTWEG      TYPE VTWEG,        "유통채널
+         SKTOF      TYPE SKTOF,        "자재통계그룹
+         PRODH      TYPE PRODH_D,      "제품계층(영업)
+         KTGRM      TYPE KTGRM,        "자재그룹1
+         MVGR1      TYPE MVGR1,        "자재그룹2
+         MVGR2      TYPE MVGR2,        "자재그룹3
+         MVGR3      TYPE MVGR3,        "자재그룹4
+         MVGR4      TYPE MVGR4,        "자재그룹5
+         MVGR5      TYPE MVGR5,        "수송그룹
+         LADGR      TYPE LADGR,        "적재그룹
+         VBAMG      TYPE VBAMG,        "최소주문량
+
+         " 플랜트 데이터 (MARC)
+         WERKS      TYPE WERKS_D,      " 플랜트
+         DWERK      TYPE WERKS_D,      "납품플랜트
+         EKGRP      TYPE EKGRP,        "구매그룹
+         KZKUP      TYPE KZKUP,        "공동제품
+         DISMM      TYPE DISMM,        "MRP유형
+         DISPO      TYPE DISPO,        "MRP관리자
+         PERKZ      TYPE PERKZ,        "기간표시자
+         STRGR      TYPE STRGR,        "전략그룹
+         DISLS      TYPE DISLS,        "로트크기
+         BESKZ      TYPE BESKZ,        "조달유형
+         DZEIT      TYPE DZEIT,        "계획납기일수
+*         ueetk       TYPE ueetk,        "과소입고허용오차
+         MTVFP      TYPE MTVFP,        "가용성검사
+
+         " 평가 데이터 (MBEW)
+         BKLAS      TYPE BKLAS,        "평가클래스
+         BWKEY      TYPE BWKEY,        "평가영역
+         BWTTY      TYPE BWTTY_D,      "평가유형
+         MLAST      TYPE CK_ML_ABST,        "가격결정
+         VPRSV      TYPE VPRSV,        "가격통제
+         PEINH      TYPE PEINH,        "가격단위
+         EKALR      TYPE CK_EKALREL,        "수량구조
+         LOSGR      TYPE LOSGR,        "로트크기(평가)
+         MAKTX      TYPE MAKTX,       " 자재 내역
+         " 처리 결과 (필수)
+         MSGTY      TYPE BAPI_MTYPE,   "메시지타입
+         MSGTX      TYPE BAPI_MSG,     "메시지
+       END OF TY_EXCEL.
+DATA: GT_EXCEL TYPE STANDARD TABLE OF TY_EXCEL,
+      GS_EXCEL TYPE TY_EXCEL.
+
+" ALV 관련 변수
+DATA: GR_ALV       TYPE REF TO CL_GUI_ALV_GRID,
+      GR_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER.
+
+DATA: GT_FCAT   TYPE LVC_T_FCAT,
+      GS_FCAT   TYPE LVC_S_FCAT,
+      GS_LAYOUT TYPE LVC_S_LAYO.
+
+DATA : GT_ZMDAT9001 TYPE TABLE OF ZMDAT9001,
+       GS_ZMDAT9001 LIKE LINE OF  GT_ZMDAT9001,
+       GT_ZMDAT9002 TYPE TABLE OF ZMDAT9002,
+       GS_ZMDAT9002 LIKE LINE OF  GT_ZMDAT9002,
+       GT_ZMDAT9003 TYPE TABLE OF ZMDAT9003,
+       GS_ZMDAT9003 LIKE LINE OF  GT_ZMDAT9003,
+       GT_ZMDAT9004 TYPE TABLE OF ZMDAT9004,
+       GS_ZMDAT9004 LIKE LINE OF  GT_ZMDAT9004,
+       GT_ZMDAT9005 TYPE TABLE OF ZMDAT9005,
+       GS_ZMDAT9005 LIKE LINE OF  GT_ZMDAT9005,
+       GT_ZMDAT9006 TYPE TABLE OF ZMDAT9006,
+       GS_ZMDAT9006 LIKE LINE OF  GT_ZMDAT9006,
+       GT_ZMDAT9007 TYPE TABLE OF ZMDAT9007,
+       GS_ZMDAT9007 LIKE LINE OF  GT_ZMDAT9007.
+
+
+PARAMETERS: P_FILE TYPE RLGRAP-FILENAME. "OBLIGATORY.
+PARAMETERS: P_MATNR TYPE MARA-MATNR OBLIGATORY.
+PARAMETERS: P_MTART TYPE MARA-MTART OBLIGATORY.
+PARAMETERS: P_WERKS TYPE WERKS_D.
+PARAMETERS: P_VKORG TYPE VKORG.
+PARAMETERS: P_VTWEG TYPE VTWEG.
+PARAMETERS: P_NOT_VL TYPE C.
+
+
+"=========================
+" SELECTION SCREEN
+"=========================
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_FILE.
+  CALL FUNCTION 'F4_FILENAME'
+    IMPORTING
+      FILE_NAME = P_FILE.
+
+  "=========================
+  " EXCEL 파일 -> 내부테이블 변환
+  "=========================
+
+START-OF-SELECTION.
+*  PERFORM upload_excel.
+  PERFORM SELECT_DATA.
+  PERFORM SAVE_MATERIALS_2.
+*  CALL SCREEN 100.
+
+*"=========================
+*" 화면 정의
+*"=========================
+*MODULE status_0100 OUTPUT.
+*
+*ENDMODULE.
+
+MODULE USER_COMMAND_0100 INPUT.
+  CASE SY-UCOMM.
+    WHEN 'BACK' OR 'EXIT' OR 'CANC'.
+      LEAVE PROGRAM.
+    WHEN 'SAVE'.
+      PERFORM SAVE_MATERIALS.
+  ENDCASE.
+ENDMODULE.
+
+"=========================
+" INCLUDE : FIELD CATALOG 생성
+"=========================
+FORM MAKE_FIELDCAT .
+  CLEAR GT_FCAT.
+
+  DEFINE ADD_FCAT.
+    GS_FCAT-FIELDNAME = &1.
+    GS_FCAT-COLTEXT   = &2.
+    APPEND GS_FCAT TO GT_FCAT.
+    CLEAR GS_FCAT.
+  END-OF-DEFINITION.
+
+  ADD_FCAT 'MATNR' '자재코드'.
+  ADD_FCAT 'MTART' '자재유형'.
+  ADD_FCAT 'MAKTX' '자재내역'.
+  ADD_FCAT 'MATKL' '자재그룹'.
+  ADD_FCAT 'MEINS' '단위'.
+  ADD_FCAT 'WERKS' '플랜트'.
+  ADD_FCAT 'MRP_CTRLER' 'MRP컨트롤러'.
+  ADD_FCAT 'LOTSIZEKEY' 'LOT결정'.
+  ADD_FCAT 'FIXED_LOT' '고정로트크기'.
+
+  ADD_FCAT 'MSGTY' '결과유형'.
+  ADD_FCAT 'MSGTX' '메시지'.
+ENDFORM.
+
+"=========================
+" EXCEL 업로드 처리
+"=========================
+FORM UPLOAD_EXCEL.
+  DATA: LT_RAW TYPE TABLE OF ALSMEX_TABLINE,
+        LS_RAW TYPE ALSMEX_TABLINE.
+
+  CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+    EXPORTING
+      FILENAME    = P_FILE
+      I_BEGIN_COL = 1
+      I_BEGIN_ROW = 2
+      I_END_COL   = 9
+      I_END_ROW   = 9999
+    TABLES
+      INTERN      = LT_RAW.
+
+  LOOP AT LT_RAW INTO LS_RAW.
+    CASE LS_RAW-COL.
+      WHEN 1. GS_EXCEL-MATNR = LS_RAW-VALUE.
+      WHEN 2. GS_EXCEL-MTART = LS_RAW-VALUE.
+      WHEN 3. GS_EXCEL-MBRSH = LS_RAW-VALUE.
+      WHEN 4. GS_EXCEL-MATKL = LS_RAW-VALUE.
+      WHEN 5. GS_EXCEL-MEINS = LS_RAW-VALUE.
+      WHEN 6. GS_EXCEL-GEWEI = LS_RAW-VALUE.
+      WHEN 7. GS_EXCEL-SPART = LS_RAW-VALUE.
+      WHEN 8. GS_EXCEL-XCHPF = LS_RAW-VALUE.
+      WHEN 9. GS_EXCEL-BISMT = LS_RAW-VALUE.
+      WHEN 10. GS_EXCEL-EXTWG = LS_RAW-VALUE.
+      WHEN 11. GS_EXCEL-MFRPN = LS_RAW-VALUE.
+      WHEN 12. GS_EXCEL-MTPOS_MARA = LS_RAW-VALUE.
+      WHEN 13. GS_EXCEL-VKORG = LS_RAW-VALUE.
+      WHEN 14. GS_EXCEL-VTWEG = LS_RAW-VALUE.
+      WHEN 15. GS_EXCEL-SKTOF = LS_RAW-VALUE.
+      WHEN 16. GS_EXCEL-DWERK = LS_RAW-VALUE.
+      WHEN 17. GS_EXCEL-PRODH = LS_RAW-VALUE.
+      WHEN 18. GS_EXCEL-KTGRM = LS_RAW-VALUE.
+      WHEN 19. GS_EXCEL-MVGR1 = LS_RAW-VALUE.
+      WHEN 20. GS_EXCEL-MVGR2 = LS_RAW-VALUE.
+      WHEN 21. GS_EXCEL-MVGR3 = LS_RAW-VALUE.
+      WHEN 22. GS_EXCEL-MVGR4 = LS_RAW-VALUE.
+      WHEN 23. GS_EXCEL-MVGR5 = LS_RAW-VALUE.
+      WHEN 24. GS_EXCEL-LADGR = LS_RAW-VALUE.
+      WHEN 25. GS_EXCEL-VBAMG = LS_RAW-VALUE.
+      WHEN 26. GS_EXCEL-EKGRP = LS_RAW-VALUE.
+      WHEN 27. GS_EXCEL-KZKUP = LS_RAW-VALUE.
+      WHEN 28. GS_EXCEL-DISMM = LS_RAW-VALUE.
+      WHEN 29. GS_EXCEL-DISPO = LS_RAW-VALUE.
+      WHEN 30. GS_EXCEL-PERKZ = LS_RAW-VALUE.
+      WHEN 31. GS_EXCEL-STRGR = LS_RAW-VALUE.
+      WHEN 32. GS_EXCEL-DISLS = LS_RAW-VALUE.
+      WHEN 33. GS_EXCEL-BESKZ = LS_RAW-VALUE.
+      WHEN 34. GS_EXCEL-DZEIT = LS_RAW-VALUE.
+      WHEN 35. GS_EXCEL-MTVFP = LS_RAW-VALUE.
+      WHEN 36. GS_EXCEL-BKLAS = LS_RAW-VALUE.
+      WHEN 37. GS_EXCEL-BWTTY = LS_RAW-VALUE.
+      WHEN 38. GS_EXCEL-MLAST = LS_RAW-VALUE.
+      WHEN 39. GS_EXCEL-VPRSV = LS_RAW-VALUE.
+      WHEN 40. GS_EXCEL-PEINH = LS_RAW-VALUE.
+      WHEN 41. GS_EXCEL-EKALR = LS_RAW-VALUE.
+      WHEN 42. GS_EXCEL-LOSGR = LS_RAW-VALUE.
+    ENDCASE.
+    AT END OF ROW.
+      APPEND GS_EXCEL TO GT_EXCEL.
+      CLEAR GS_EXCEL.
+    ENDAT.
+  ENDLOOP.
+ENDFORM.
+
+"=========================
+" SAVE 버튼 처리 (BAPI 호출)
+"=========================
+FORM SAVE_MATERIALS.
+**  DATA: GT_RETURN  TYPE TABLE OF BAPIRET2,
+**        GS_HEAD    TYPE BAPIMATHEAD,
+**        GS_CLIENT  TYPE BAPI_MARA,
+**        GS_CLIENTX TYPE BAPI_MARAX,
+**        GS_PLANT   TYPE BAPI_MARC,
+**        GS_PLANTX  TYPE BAPI_MARCX,
+***        gs_mrp1   TYPE bapi_mrp1,
+***        gs_mrp1x  TYPE bapi_mrp1x,
+***        gs_mrp2   TYPE bapi_mrp2,
+***        gs_mrp2x  TYPE bapi_mrp2x,
+***        gs_mrp3   TYPE bapi_mrp3,
+***        gs_mrp3x  TYPE bapi_mrp3x,
+***        gs_mrp4   TYPE bapi_mrp4,
+***        gs_mrp4x  TYPE bapi_mrp4x,
+**        GT_MAKT    TYPE TABLE OF BAPI_MAKT,
+**        GS_MAKT    TYPE BAPI_MAKT.
+**
+**  LOOP AT GT_EXCEL INTO GS_EXCEL.
+**
+**    CLEAR: GT_RETURN, GS_HEAD, GS_CLIENT, GS_CLIENTX, GS_PLANT, GS_PLANTX.
+**
+**    GS_HEAD-MATERIAL   = GS_EXCEL-MATNR.
+**    GS_HEAD-MATL_TYPE  = GS_EXCEL-MTART.
+**    GS_HEAD-IND_SECTOR = 'M'.
+**    GS_HEAD-BASIC_VIEW = 'X'.
+**    GS_HEAD-MRP_VIEW   = 'X'.
+***    gs_head-plant_view = 'X'.
+**
+**    GS_CLIENT-BASE_UOM   = GS_EXCEL-MEINS.
+**    GS_CLIENT-MATL_GROUP = GS_EXCEL-MATKL.
+**    GS_CLIENTX-BASE_UOM   = 'X'.
+**    GS_CLIENTX-MATL_GROUP = 'X'.
+**
+**    GS_PLANT-PLANT = GS_EXCEL-WERKS.
+**    GS_PLANTX-PLANT = GS_EXCEL-WERKS.
+**
+**    GS_PLANT-PLANT = GS_EXCEL-WERKS.
+**    GS_PLANT-MRP_TYPE = 'PD'.
+**    GS_PLANTX-MRP_TYPE = 'X'.
+**
+**    GS_PLANT-PLANT = GS_EXCEL-WERKS.
+**    GS_PLANT-PROC_TYPE = 'E'.
+**    GS_PLANTX-PROC_TYPE = 'X'.
+**
+**    GS_PLANT-AVAILCHECK = '02'.
+**    GS_PLANTX-AVAILCHECK = 'X'.
+**
+**    GS_PLANT-BATCH_MGMT = 'X'.
+**    GS_PLANTX-BATCH_MGMT = 'X'.
+**
+**    GS_PLANT-MRP_CTRLER  = GS_EXCEL-MRP_CTRLER.
+**    GS_PLANTX-MRP_CTRLER = 'X'.
+**
+**    GS_PLANT-LOTSIZEKEY = GS_EXCEL-LOTSIZEKEY.
+**    GS_PLANTX-LOTSIZEKEY = 'X'.
+**
+**    GS_PLANT-FIXED_LOT = GS_EXCEL-FIXED_LOT.
+**    GS_PLANTX-FIXED_LOT = 'X'.
+**
+**    GS_MAKT-LANGU = SY-LANGU.
+**    GS_MAKT-MATL_DESC = GS_EXCEL-MAKTX.
+**    APPEND GS_MAKT TO GT_MAKT.
+**
+**    CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+**      EXPORTING
+**        HEADDATA            = GS_HEAD
+**        CLIENTDATA          = GS_CLIENT
+**        CLIENTDATAX         = GS_CLIENTX
+**        PLANTDATA           = GS_PLANT
+**        PLANTDATAX          = GS_PLANTX
+***       mrp1data            = gs_mrp1
+***       mrp1datax           = gs_mrp1x
+***       mrp2data            = gs_mrp2
+***       mrp2datax           = gs_mrp2x
+***       mrp3data            = gs_mrp3
+***       mrp3datax           = gs_mrp3x
+***       mrp4data            = gs_mrp4
+***       mrp4datax           = gs_mrp4x
+**      TABLES
+**        RETURNMESSAGES      = GT_RETURN
+**        MATERIALDESCRIPTION = GT_MAKT.
+**
+**    READ TABLE GT_RETURN WITH KEY TYPE = 'E' INTO DATA(LS_RET).
+**
+**    IF SY-SUBRC = 0.
+**      GS_EXCEL-MSGTY = LS_RET-TYPE.
+**      GS_EXCEL-MSGTX = LS_RET-MESSAGE.
+**    ELSE.
+**      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT' EXPORTING WAIT = 'X'.
+**      GS_EXCEL-MSGTY = 'S'.
+**      GS_EXCEL-MSGTX = 'Material created successfully'.
+**    ENDIF.
+**
+**    MODIFY GT_EXCEL FROM GS_EXCEL.
+**  ENDLOOP.
+
+*&---------------------------------------------------------------------*
+*& 자재 마스터 생성 - BAPI_MATERIAL_SAVEDATA
+*&---------------------------------------------------------------------*
+  " BAPI 구조체 선언
+  DATA: LS_HEADDATA             TYPE BAPIMATHEAD,
+        LS_CLIENTDATA           TYPE BAPI_MARA,
+        LS_CLIENTDATAX          TYPE BAPI_MARAX,
+        LS_PLANTDATA            TYPE BAPI_MARC,
+        LS_PLANTDATAX           TYPE BAPI_MARCX,
+        LS_SALESDATA            TYPE BAPI_MVKE,
+        LS_SALESDATAX           TYPE BAPI_MVKEX,
+        LS_STORAGELOCATIONDATA  TYPE BAPI_MARD,
+        LS_STORAGELOCATIONDATAX TYPE BAPI_MARDX,
+        LS_VALUATIONDATA        TYPE BAPI_MBEW,
+        LS_VALUATIONDATAX       TYPE BAPI_MBEWX,
+        LS_RETURN               TYPE BAPIRET2.
+  DATA : LT_MATERIALDESCRIPTION TYPE TABLE OF  BAPI_MAKT,
+         LS_MATERIALDESCRIPTION LIKE LINE OF LT_MATERIALDESCRIPTION.
+
+  DATA: LT_TAXCLASSIFICATIONS TYPE TABLE OF BAPI_MLAN,
+        LS_TAXCLASSIFICATIONS LIKE LINE OF LT_TAXCLASSIFICATIONS.
+
+  DATA: LT_UNITSOFMEASURE  LIKE TABLE OF BAPI_MARM,
+        LS_UNITSOFMEASUREX LIKE LINE OF LT_UNITSOFMEASURE.
+
+*  MARM-MEINH
+*MARM-UMREZ
+*MARM-UMREN
+
+
+
+  " gt_excel이 이미 데이터를 포함하고 있다고 가정
+  LOOP AT GT_EXCEL INTO GS_EXCEL.
+
+    " 초기화
+    CLEAR: LS_HEADDATA, LS_CLIENTDATA, LS_CLIENTDATAX,
+           LS_PLANTDATA, LS_PLANTDATAX, LS_SALESDATA, LS_SALESDATAX,
+           LS_STORAGELOCATIONDATA, LS_STORAGELOCATIONDATAX,
+           LS_VALUATIONDATA, LS_VALUATIONDATAX, LS_RETURN.
+
+    " 1. Header Data (필수)
+    LS_HEADDATA-MATERIAL     = GS_EXCEL-MATNR.      "자재번호
+    LS_HEADDATA-MATL_TYPE   = P_MTART.      "자재유형
+    LS_HEADDATA-IND_SECTOR = GS_EXCEL-MBRSH.      "산업분야
+    LS_HEADDATA-BASIC_VIEW = ABAP_TRUE.
+    LS_HEADDATA-SALES_VIEW = ABAP_TRUE.
+    LS_HEADDATA-PURCHASE_VIEW = ABAP_TRUE.
+    LS_HEADDATA-MRP_VIEW = ABAP_TRUE.
+    LS_HEADDATA-ACCOUNT_VIEW = ABAP_TRUE.
+    LS_HEADDATA-COST_VIEW = ABAP_TRUE.
+
+    " 2. Client Data (일반데이터 - MARA)
+    LS_CLIENTDATA-MATL_GROUP = GS_EXCEL-MATKL.     "자재그룹
+    LS_CLIENTDATA-BASE_UOM   = GS_EXCEL-MEINS.     "기본단위
+    LS_CLIENTDATA-UNIT_OF_WT = GS_EXCEL-GEWEI.     "순중량단위
+    LS_CLIENTDATA-DIVISION   = GS_EXCEL-SPART.     "제품군
+    LS_CLIENTDATA-PROD_HIER  = GS_EXCEL-PRDHA.     "제품계층
+    LS_CLIENTDATA-BATCH_MGMT = GS_EXCEL-XCHPF.     "배치관리
+    LS_CLIENTDATA-OLD_MAT_NO = GS_EXCEL-BISMT.     "구자재번호
+    LS_CLIENTDATA-EXTMATLGRP = GS_EXCEL-EXTWG.     "외부자재그룹
+    LS_CLIENTDATA-MFR_NO = GS_EXCEL-MFRPN.    "제조업체부품번호
+    LS_CLIENTDATA-ITEM_CAT  = GS_EXCEL-MTPOS_MARA."자재범주
+
+    " X 필드 설정 (변경할 필드 표시)
+    LS_CLIENTDATAX-MATL_GROUP = 'X'.
+    LS_CLIENTDATAX-BASE_UOM   = 'X'.
+    LS_CLIENTDATAX-UNIT_OF_WT = 'X'.
+    LS_CLIENTDATAX-DIVISION   = 'X'.
+    LS_CLIENTDATAX-PROD_HIER  = 'X'.
+    LS_CLIENTDATAX-BATCH_MGMT = 'X'.
+    LS_CLIENTDATAX-OLD_MAT_NO = 'X'.
+    LS_CLIENTDATAX-EXTMATLGRP = 'X'.
+    LS_CLIENTDATAX-MFR_NO = 'X'.
+    LS_CLIENTDATAX-ITEM_CAT  = 'X'.
+
+    " 3. Sales Data (영업데이터 - MVKE)
+    LS_SALESDATA-SALES_ORG   = GS_EXCEL-VKORG.     "영업조직
+    LS_SALESDATA-DELYG_PLNT = GS_EXCEL-DWERK. "납품플랜트
+    LS_SALESDATA-DISTR_CHAN  = GS_EXCEL-VTWEG.     "유통채널
+    LS_SALESDATA-CASH_DISC = GS_EXCEL-SKTOF.     "자재통계그룹
+    LS_SALESDATA-PROD_HIER   = GS_EXCEL-PRODH.     "제품계층
+    LS_SALESDATA-ACCT_ASSGT = GS_EXCEL-KTGRM.
+    LS_SALESDATA-MATL_GRP_1  =   GS_EXCEL-MVGR1.   "자재그룹1
+    LS_SALESDATA-MATL_GRP_2  =    GS_EXCEL-MVGR2.   "자재그룹2
+    LS_SALESDATA-MATL_GRP_3  =     GS_EXCEL-MVGR3."자재그룹3
+    LS_SALESDATA-MATL_GRP_4  =     GS_EXCEL-MVGR4. "자재그룹4
+    LS_SALESDATA-MATL_GRP_5  =      GS_EXCEL-MVGR5. "자재그룹5
+*    ls_salesdata-trans_grp   =     gs_excel-ladgr.      "수송그룹
+*    ls_salesdata-loading_grp =  gs_excel-vbamg.      "적재그룹
+
+    LS_SALESDATAX-SALES_ORG   = GS_EXCEL-VKORG.     "영업조직
+    LS_SALESDATA-DELYG_PLNT = 'X'.
+    LS_SALESDATAX-DISTR_CHAN  = GS_EXCEL-VTWEG.     "유통채널
+    LS_SALESDATAX-CASH_DISC  = 'X'.
+    LS_SALESDATAX-PROD_HIER   = 'X'.
+    LS_SALESDATA-ACCT_ASSGT = 'X'.
+    LS_SALESDATAX-MATL_GRP_1  = 'X'.
+    LS_SALESDATAX-MATL_GRP_2  = 'X'.
+    LS_SALESDATAX-MATL_GRP_3  = 'X'.
+    LS_SALESDATAX-MATL_GRP_4  = 'X'.
+    LS_SALESDATAX-MATL_GRP_5  = 'X'.
+*    ls_salesdatax-trans_grp   = 'X'.
+*    ls_salesdatax-loading_grp = 'X'.
+*    ls_salesdatax-min_order_qty = 'X'.
+
+    " 4. Plant Data (플랜트데이터 - MARC)
+    LS_PLANTDATA-PLANT       = GS_EXCEL-WERKS.     "플랜트
+
+    LS_PLANTDATA-PUR_GROUP   = GS_EXCEL-EKGRP.     "구매그룹
+    LS_PLANTDATA-CO_PRODUCT  = GS_EXCEL-KZKUP.     "공동제품
+    LS_PLANTDATA-MRP_TYPE    = GS_EXCEL-DISMM.     "MRP유형
+    LS_PLANTDATA-MRP_CTRLER  = GS_EXCEL-DISPO.     "MRP관리자
+    LS_PLANTDATA-PERIOD_IND  = GS_EXCEL-PERKZ.     "기간표시자
+    LS_PLANTDATA-PLAN_STRGP = GS_EXCEL-STRGR.     "전략그룹
+
+    LS_PLANTDATA-LOTSIZEKEY    = GS_EXCEL-DISLS.     "로트크기유형
+    LS_PLANTDATA-LOT_SIZE    = GS_EXCEL-LOSGR.     "로트크기
+    LS_PLANTDATA-PROC_TYPE   = GS_EXCEL-BESKZ.     "조달유형
+    LS_PLANTDATA-INHSEPRODT  = GS_EXCEL-DZEIT.     "계획납기일수
+*    ls_plantdata-underdel_tol = gs_excel-ueetk.    "과소입고허용오차
+    LS_PLANTDATA-AVAILCHECK  = GS_EXCEL-MTVFP.     "가용성검사
+
+    LS_PLANTDATAX-PLANT       = GS_EXCEL-WERKS. " 플랜트
+    LS_PLANTDATAX-PUR_GROUP   = 'X'.
+    LS_PLANTDATAX-CO_PRODUCT  = 'X'.
+    LS_PLANTDATAX-MRP_TYPE    = 'X'.
+    LS_PLANTDATAX-MRP_CTRLER  = 'X'.
+    LS_PLANTDATAX-PERIOD_IND  = 'X'.
+    LS_PLANTDATAX-PLAN_STRGP = 'X'.
+    LS_PLANTDATA-LOTSIZEKEY   = 'X'.
+    LS_PLANTDATAX-LOT_SIZE    = 'X'.
+    LS_PLANTDATAX-PROC_TYPE   = 'X'.
+    LS_PLANTDATAX-INHSEPRODT  = 'X'.
+*    ls_plantdatax-underdel_tol = 'X'.
+    LS_PLANTDATAX-AVAILCHECK  = 'X'.
+
+*    " 5. Valuation Data (평가데이터 - MBEW)
+    LS_VALUATIONDATA-VAL_AREA   = GS_EXCEL-WERKS.  "평가영역(플랜트)
+    LS_VALUATIONDATA-VAL_CLASS  = GS_EXCEL-BKLAS.  "평가클래스
+*    ls_valuationdata-val_type   = gs_excel-bwkey.  "평가유형
+    LS_VALUATIONDATA-VAL_CAT     = ''.    " 평가범주
+    LS_VALUATIONDATA-ML_SETTLE  = GS_EXCEL-MLAST.   "가격 결정
+    LS_VALUATIONDATA-PRICE_CTRL = GS_EXCEL-VPRSV.  "가격통제
+**    ls_valuationdata-moving_pr  = gs_excel-mlast.  "이동평균가격
+    LS_VALUATIONDATA-PRICE_UNIT = GS_EXCEL-PEINH.  "가격단위
+*    ls_valuationdata-qty_struct = gs_excel-ekalr.  "평가결정
+**    ls_valuationdata-lot_size   = gs_excel-losgr.  "로트크기
+
+    LS_VALUATIONDATAX-VAL_AREA   = GS_EXCEL-WERKS.  "평가영역(플랜트)
+    LS_VALUATIONDATAX-VAL_CLASS  = 'X'.
+*    ls_valuationdatax-val_type   = gs_excel-bwkey .  "평가유형
+    LS_VALUATIONDATAX-VAL_CAT     = 'X'."'X'.    " 평가범주
+    LS_VALUATIONDATAX-ML_SETTLE   = 'X'.
+    LS_VALUATIONDATAX-PRICE_CTRL = 'X'.
+    LS_VALUATIONDATAX-PRICE_UNIT = 'X'.
+
+    LS_VALUATIONDATAX-PRICE_CTRL = 'X'.
+*    ls_valuationdatax-moving_pr  = 'X'.
+    LS_VALUATIONDATAX-PRICE_UNIT = 'X'.
+    LS_VALUATIONDATAX-QTY_STRUCT = 'X'.
+*    ls_valuationdatax-lot_size   = 'X'.
+
+
+    " 6. 내역
+    CLEAR : LT_MATERIALDESCRIPTION, LS_MATERIALDESCRIPTION.
+    LS_MATERIALDESCRIPTION-MATL_DESC = GS_EXCEL-MAKTX.
+    LS_MATERIALDESCRIPTION-LANGU = SY-LANGU.
+    APPEND LS_MATERIALDESCRIPTION TO LT_MATERIALDESCRIPTION.
+
+    " 7. 단위
+    SELECT *
+      FROM ZMDAT9003
+      WHERE MATNR = @P_MATNR
+      INTO TABLE @DATA(LT_ZMDAT9003).
+
+
+    " 8. 세금 유형 -> 세금 유형의 MWST는 어떻게 가져올 것인가?
+    SELECT SINGLE LAND1
+      FROM T001W
+      WHERE WERKS = @P_WERKS
+      INTO @DATA(LV_LAND1).
+
+    SELECT SINGLE *
+    FROM ZMDAT9007
+    WHERE MATNR = @P_MATNR
+      AND ALAND = @LV_LAND1
+      INTO @DATA(LS_ZMDAT9007).
+
+    CLEAR : LS_TAXCLASSIFICATIONS,
+    LT_TAXCLASSIFICATIONS.
+
+    LS_TAXCLASSIFICATIONS-TAX_TYPE_1 = 'MWST'.
+    LS_TAXCLASSIFICATIONS-DEPCOUNTRY = LS_ZMDAT9007-ALAND.
+    LS_TAXCLASSIFICATIONS-TAXCLASS_1 = LS_ZMDAT9007-TAXM1.
+    APPEND LS_TAXCLASSIFICATIONS TO LT_TAXCLASSIFICATIONS.
+
+    " BAPI 호출
+    CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+      EXPORTING
+        HEADDATA            = LS_HEADDATA
+        CLIENTDATA          = LS_CLIENTDATA
+        CLIENTDATAX         = LS_CLIENTDATAX
+        PLANTDATA           = LS_PLANTDATA
+        PLANTDATAX          = LS_PLANTDATAX
+        SALESDATA           = LS_SALESDATA
+        SALESDATAX          = LS_SALESDATAX
+        VALUATIONDATA       = LS_VALUATIONDATA
+        VALUATIONDATAX      = LS_VALUATIONDATAX
+      IMPORTING
+        RETURN              = LS_RETURN
+      TABLES
+        TAXCLASSIFICATIONS  = LT_TAXCLASSIFICATIONS[]
+        MATERIALDESCRIPTION = LT_MATERIALDESCRIPTION[]
+      EXCEPTIONS
+        OTHERS              = 99.
+
+    " 결과 처리
+    IF LS_RETURN-TYPE = 'S'.
+      " 성공 시 COMMIT
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          WAIT = 'X'.
+      LS_VALUATIONDATAX-VAL_TYPE     = GS_EXCEL-BWKEY."'X'.    " 평가범주
+      LS_VALUATIONDATA-VAL_TYPE     = GS_EXCEL-BWKEY.    " 평가범주
+*    " BAPI 호출
+      CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+        EXPORTING
+          HEADDATA            = LS_HEADDATA
+*         CLIENTDATA          = LS_CLIENTDATA
+*         CLIENTDATAX         = LS_CLIENTDATAX
+*         PLANTDATA           = LS_PLANTDATA
+*         PLANTDATAX          = LS_PLANTDATAX
+*         SALESDATA           = LS_SALESDATA
+*         SALESDATAX          = LS_SALESDATAX
+          VALUATIONDATA       = LS_VALUATIONDATA
+          VALUATIONDATAX      = LS_VALUATIONDATAX
+        IMPORTING
+          RETURN              = LS_RETURN
+        TABLES
+          TAXCLASSIFICATIONS  = LT_TAXCLASSIFICATIONS[]
+          MATERIALDESCRIPTION = LT_MATERIALDESCRIPTION[]
+        EXCEPTIONS
+          OTHERS              = 99.
+
+      IF LS_RETURN-TYPE = 'S'.
+        " 성공 시 COMMIT
+        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+          EXPORTING
+            WAIT = 'X'.
+        WRITE : 'S', LS_RETURN-MESSAGE.
+      ENDIF.
+    ELSE.
+      " 실패 시 ROLLBACK
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+      WRITE : 'E', LS_RETURN-MESSAGE.
+
+    ENDIF.
+
+  ENDLOOP.
+
+*  WRITE : gs_excel-msgtx.
+
+*  CALL METHOD gr_alv->refresh_table_display.
+ENDFORM.
+"=========================
+" SAVE 버튼 처리 (BAPI 호출)
+"=========================
+FORM SAVE_MATERIALS_2.
+*&---------------------------------------------------------------------*
+*& 자재 마스터 생성 - BAPI_MATERIAL_SAVEDATA
+*&---------------------------------------------------------------------*
+  " BAPI 구조체 선언
+  DATA: LT_HEADDATA            LIKE TABLE OF BAPIE1MATHEADER WITH HEADER LINE,
+        LT_CLIENTDATA          LIKE TABLE OF BAPIE1MARA WITH HEADER LINE,
+        LT_CLIENTDATAx         LIKE TABLE OF BAPIE1MARAX WITH HEADER LINE,
+        LT_PLANTDATA           LIKE TABLE OF BAPIE1MARC WITH HEADER LINE,
+        LT_PLANTDATAx          LIKE TABLE OF BAPIE1MARCx WITH HEADER LINE,
+        LT_SALESDATA           LIKE TABLE OF BAPIE1MVKE WITH HEADER LINE,
+        LT_SALESDATAx          LIKE TABLE OF BAPIE1MVKEX WITH HEADER LINE,
+        LT_STORAGETYPEDATA     LIKE TABLE OF BAPIE1MARD WITH HEADER LINE,
+        LT_STORAGETYPEDATAx    LIKE TABLE OF BAPIE1MARDx WITH HEADER LINE,
+        LT_VALUATIONDATA       LIKE TABLE OF BAPIE1MBEW WITH HEADER LINE,
+        LT_VALUATIONDATAx      LIKE TABLE OF BAPIE1MBEWX WITH HEADER LINE,
+        LT_UNITSOFMEASURE      LIKE TABLE OF BAPIE1MARM WITH HEADER LINE,
+        LT_UNITSOFMEASUREX     LIKE TABLE OF BAPIE1MARMX WITH HEADER LINE,
+        LT_MATERIALDESCRIPTION LIKE TABLE OF BAPIE1MAKT WITH HEADER LINE,
+        LT_TAXCLASSIFICATIONS  TYPE TABLE OF BAPIE1MLAN WITH HEADER LINE,
+        LS_RETURN              LIKE BAPIRET2.
+
+
+
+  " gt_excel이 이미 데이터를 포함하고 있다고 가정
+  LOOP AT GT_ZMDAT9001 INTO GS_ZMDAT9001.
+
+    " 초기화
+    CLEAR: LT_HEADDATA[], LT_CLIENTDATA[], LT_CLIENTDATAX[],
+          LT_PLANTDATA[], LT_PLANTDATAX[], LT_SALESDATA[] , LT_SALESDATAX[],
+          LT_STORAGETYPEDATA[], LT_STORAGETYPEDATAX[], LT_UNITSOFMEASURE[], LT_UNITSOFMEASUREX[],
+          LT_VALUATIONDATA[], LT_VALUATIONDATAX[], LS_RETURN.
+
+    " 1. Header Data (필수)
+    lt_HEADDATA-MATERIAL     = GS_ZMDAT9001-MATNR.      "자재번호
+    lt_HEADDATA-MATL_TYPE   = P_MTART.                            "자재유형
+    lt_HEADDATA-IND_SECTOR = GS_ZMDAT9001-MBRSH.      "산업분야
+    lt_HEADDATA-BASIC_VIEW = ABAP_TRUE.
+    lt_HEADDATA-SALES_VIEW = ABAP_TRUE.
+    lt_HEADDATA-PURCHASE_VIEW = ABAP_TRUE.
+    lt_HEADDATA-WORK_SCHED_VIEW = ABAP_TRUE.
+    lt_HEADDATA-MRP_VIEW = ABAP_TRUE.
+    lt_HEADDATA-ACCOUNT_VIEW = ABAP_TRUE.
+    lt_HEADDATA-COST_VIEW = ABAP_TRUE.
+    APPEND lt_HEADDATA.
+
+    " 2. Client Data (일반데이터 - MARA)
+    LT_CLIENTDATA-MATERIAL   = GS_ZMDAT9001-MATNR.
+    LT_CLIENTDATA-MATL_GROUP = GS_ZMDAT9001-MATKL.     "자재그룹
+    LT_CLIENTDATA-BASE_UOM   = GS_ZMDAT9001-MEINS.     "기본단위
+    LT_CLIENTDATA-UNIT_OF_WT = GS_ZMDAT9001-GEWEI.     "순중량단위
+    LT_CLIENTDATA-DIVISION   = GS_ZMDAT9001-SPART.     "제품군
+    LT_CLIENTDATA-PROD_HIER  = GS_ZMDAT9001-PRDHA.     "제품계층
+    LT_CLIENTDATA-BATCH_MGMT = GS_ZMDAT9001-XCHPF.     "배치관리
+    LT_CLIENTDATA-OLD_MAT_NO = GS_ZMDAT9001-BISMT.     "구자재번호
+    LT_CLIENTDATA-EXTMATLGRP = GS_ZMDAT9001-EXTWG.     "외부자재그룹
+    LT_CLIENTDATA-MFR_NO    = GS_ZMDAT9001-MFRPN.    "제조업체부품번호
+    LT_CLIENTDATA-ITEM_CAT  = GS_ZMDAT9001-MTPOS_MARA."자재범주
+    APPEND LT_CLIENTDATA.
+
+    " X 필드 설정 (변경할 필드 표시)
+    LT_CLIENTDATAX-MATERIAL   = GS_ZMDAT9001-MATNR.
+    LT_CLIENTDATAX-MATL_GROUP = 'X'.
+    LT_CLIENTDATAX-BASE_UOM   = 'X'.
+    LT_CLIENTDATAX-UNIT_OF_WT = 'X'.
+    LT_CLIENTDATAX-DIVISION   = 'X'.
+    LT_CLIENTDATAX-PROD_HIER  = 'X'.
+    LT_CLIENTDATAX-BATCH_MGMT = 'X'.
+    LT_CLIENTDATAX-OLD_MAT_NO = 'X'.
+    LT_CLIENTDATAX-EXTMATLGRP = 'X'.
+    LT_CLIENTDATAX-MFR_NO = 'X'.
+    LT_CLIENTDATAX-ITEM_CAT  = 'X'.
+    APPEND LT_CLIENTDATAX.
+
+    " 3. Sales Data (영업데이터 - MVKE)
+    LOOP AT GT_ZMDAT9005 INTO GS_ZMDAT9005.
+      LT_SALESDATA-MATERIAL    = GS_ZMDAT9005-MATNR.
+      LT_SALESDATA-SALES_ORG   = GS_ZMDAT9005-VKORG.     "영업조직
+      LT_SALESDATA-DELYG_PLNT  = GS_ZMDAT9005-DWERK. "납품플랜트
+      LT_SALESDATA-DISTR_CHAN  = GS_ZMDAT9005-VTWEG.     "유통채널
+      LT_SALESDATA-CASH_DISC   = GS_ZMDAT9005-SKTOF.     "자재통계그룹
+      LT_SALESDATA-PROD_HIER   = GS_ZMDAT9005-PRODH.     "제품계층
+      LT_SALESDATA-ACCT_ASSGT  = GS_ZMDAT9005-KTGRM.
+      LT_SALESDATA-MATL_GRP_1  = GS_ZMDAT9005-MVGR1.   "자재그룹1
+      LT_SALESDATA-MATL_GRP_2  = GS_ZMDAT9005-MVGR2.   "자재그룹2
+      LT_SALESDATA-MATL_GRP_3  = GS_ZMDAT9005-MVGR3."자재그룹3
+      LT_SALESDATA-MATL_GRP_4  = GS_ZMDAT9005-MVGR4. "자재그룹4
+      LT_SALESDATA-MATL_GRP_5  = GS_ZMDAT9005-MVGR5. "자재그룹5
+
+*    ls_salesdata-trans_grp   =     gs_excel-ladgr.      "수송그룹
+*    ls_salesdata-loading_grp =  gs_excel-vbamg.      "적재그룹
+
+      LT_SALESDATAX-MATERIAL    = GS_ZMDAT9005-MATNR. "자재코드
+      LT_SALESDATAX-SALES_ORG   = GS_ZMDAT9005-VKORG.     "영업조직
+      LT_SALESDATAX-DELYG_PLNT  = 'X'.
+      LT_SALESDATAX-DISTR_CHAN  = GS_ZMDAT9005-VTWEG.     "유통채널
+      LT_SALESDATAX-CASH_DISC   = 'X'.
+      LT_SALESDATAX-PROD_HIER   = 'X'.
+      LT_SALESDATAX-ACCT_ASSGT  = 'X'.
+      LT_SALESDATAX-MATL_GRP_1  = 'X'.
+      LT_SALESDATAX-MATL_GRP_2  = 'X'.
+      LT_SALESDATAX-MATL_GRP_3  = 'X'.
+      LT_SALESDATAX-MATL_GRP_4  = 'X'.
+      LT_SALESDATAX-MATL_GRP_5  = 'X'.
+
+      APPEND LT_SALESDATA. CLEAR : LT_SALESDATA.
+      APPEND LT_SALESDATAX. CLEAR: LT_SALESDATAX.
+    ENDLOOP.
+*    ls_salesdatax-trans_grp   = 'X'.
+*    ls_salesdatax-loading_grp = 'X'.
+*    ls_salesdatax-min_order_qty = 'X'.
+
+    " 4. Plant Data (플랜트데이터 - MARC)
+    LOOP AT GT_ZMDAT9002 INTO GS_ZMDAT9002.
+      LT_PLANTDATA-MATERIAL             = GS_ZMDAT9002-MATNR. " 자재코드
+      LT_PLANTDATA-PLANT                = GS_ZMDAT9002-WERKS.     "플랜트
+      LT_PLANTDATA-PUR_GROUP            = GS_ZMDAT9002-EKGRP.     "구매그룹
+      LT_PLANTDATA-CO_PRODUCT           = GS_ZMDAT9002-KZKUP.     "공동제품
+      LT_PLANTDATA-MRP_TYPE             = GS_ZMDAT9002-DISMM.     "MRP유형
+      LT_PLANTDATA-MRP_CTRLER           = GS_ZMDAT9002-DISPO.     "MRP관리자
+      LT_PLANTDATA-PERIOD_IND           = GS_ZMDAT9002-PERKZ.     "기간표시자
+      LT_PLANTDATA-PLAN_STRGP           = GS_ZMDAT9002-STRGR.     "전략그룹
+      LT_PLANTDATA-LOTSIZEKEY           = GS_ZMDAT9002-DISLS.     "로트크기유형
+      LT_PLANTDATA-LOT_SIZE             = GS_ZMDAT9002-LOSGR.     "로트크기
+      LT_PLANTDATA-PROC_TYPE            = GS_ZMDAT9002-BESKZ.     "조달유형
+      LT_PLANTDATA-INHSEPRODT           = GS_ZMDAT9002-DZEIT.     "계획납기일수
+*    Ts_plantdata-underdel_tol          = gs_excel-ueetk.    "과소입고허용오차
+      LT_PLANTDATA-AVAILCHECK           = GS_ZMDAT9002-MTVFP.     "가용성검사
+      LT_PLANTDATA-CONSUMMODE           = GS_ZMDAT9002-VRMOD.
+      LT_PLANTDATA-BWD_CONS             = GS_ZMDAT9002-VINT1.
+      LT_PLANTDATA-FWD_CONS             = GS_ZMDAT9002-VINT2.
+      LT_PLANTDATA-ISS_ST_LOC           = GS_ZMDAT9002-LGPRO. " 생산저장위치
+      LT_PLANTDATA-PRODPROF             = 'ZC0001'."GS_ZMDAT9002-SFCPF."생산 프로파일
+      LT_PLANTDATA-PRODUCTION_SCHEDULER = 'Z01'."GS_ZMDAT9002-FEVOR. "생산감독자
+      LT_PLANTDATA-SLOC_EXPRC           = GS_ZMDAT9002-LGFSB."외부조달장소
+
+      LT_PLANTDATAX-MATERIAL             = GS_ZMDAT9002-MATNR. " 자재코드
+      LT_PLANTDATAX-PLANT                = GS_ZMDAT9002-WERKS. " 플랜트
+      LT_PLANTDATAX-PUR_GROUP            = 'X'.
+      LT_PLANTDATAX-CO_PRODUCT           = 'X'.
+      LT_PLANTDATAX-MRP_TYPE             = 'X'.
+      LT_PLANTDATAX-MRP_CTRLER           = 'X'.
+      LT_PLANTDATAX-PERIOD_IND           = 'X'.
+      LT_PLANTDATAX-PLAN_STRGP           = 'X'.
+      LT_PLANTDATAX-LOTSIZEKEY           = 'X'.
+      LT_PLANTDATAX-LOT_SIZE             = 'X'.
+      LT_PLANTDATAX-PROC_TYPE            = 'X'.
+      LT_PLANTDATAX-INHSEPRODT           = 'X'.
+*    ls_plantdatax-underdel_tol          = 'X'.
+      LT_PLANTDATAX-AVAILCHECK           = 'X'.
+      LT_PLANTDATAX-CONSUMMODE           = 'X'.
+      LT_PLANTDATAX-BWD_CONS             = 'X'.
+      LT_PLANTDATAX-FWD_CONS             = 'X'.
+      LT_PLANTDATAX-ISS_ST_LOC           = 'X'. " 생산저장위치
+      LT_PLANTDATAX-PRODPROF             = 'X'."생산 프로파일
+      LT_PLANTDATAX-PRODUCTION_SCHEDULER = 'X'. "생산감독자
+      LT_PLANTDATAX-SLOC_EXPRC           = 'X'."외부조달장소
+      APPEND LT_PLANTDATA. CLEAR : LT_PLANTDATA.
+      APPEND LT_PLANTDATAX. CLEAR : LT_PLANTDATAX.
+    ENDLOOP.
+
+*    " 5. Valuation Data (평가데이터 - MBEW)
+    IF P_NOT_VL = ABAP_FALSE.
+      LOOP AT GT_ZMDAT9004 INTO GS_ZMDAT9004.
+        LT_VALUATIONDATA-MATERIAL   = GS_ZMDAT9004-MATNR.
+        LT_VALUATIONDATA-VAL_AREA   = GS_ZMDAT9004-BWKEY.  "평가영역(플랜트)
+        LT_VALUATIONDATA-VAL_CLASS  = GS_ZMDAT9004-BKLAS.  "평가클래스
+*    ls_valuationdata-val_type   = gs_excel-bwkey.  "평가유형
+        LT_VALUATIONDATA-VAL_CAT     = ''.    " 평가범주
+        LT_VALUATIONDATA-ML_SETTLE  = GS_ZMDAT9004-MLAST.   "가격 결정
+        LT_VALUATIONDATA-PRICE_CTRL = GS_ZMDAT9004-VPRSV.  "가격통제
+**    ls_valuationdata-moving_pr  = gs_excel-mlast.  "이동평균가격
+        LT_VALUATIONDATA-PRICE_UNIT = GS_ZMDAT9004-PEINH.  "가격단위
+*    ls_valuationdata-qty_struct = gs_excel-ekalr.  "평가결정
+**    ls_valuationdata-lot_size   = gs_excel-losgr.  "로트크기
+
+        LT_VALUATIONDATAX-MATERIAL   = GS_ZMDAT9004-MATNR.
+        LT_VALUATIONDATAX-VAL_AREA   = GS_ZMDAT9004-BWKEY.  "평가영역(플랜트)
+        LT_VALUATIONDATAX-VAL_CLASS  = 'X'.
+*    ls_valuationdatax-val_type   = gs_excel-bwkey .  "평가유형
+        LT_VALUATIONDATAX-VAL_CAT     = 'X'."'X'.    " 평가범주
+        LT_VALUATIONDATAX-ML_SETTLE   = 'X'.
+        LT_VALUATIONDATAX-PRICE_CTRL = 'X'.
+        LT_VALUATIONDATAX-PRICE_UNIT = 'X'.
+        LT_VALUATIONDATAX-PRICE_CTRL = 'X'.
+*    ls_valuationdatax-moving_pr  = 'X'.
+        LT_VALUATIONDATAX-PRICE_UNIT = 'X'.
+        LT_VALUATIONDATAX-QTY_STRUCT = 'X'.
+*    ls_valuationdatax-lot_size   = 'X'.
+        APPEND LT_VALUATIONDATAX. CLEAR : LT_VALUATIONDATAX.
+        APPEND LT_VALUATIONDATA. CLEAR : LT_VALUATIONDATA.
+      ENDLOOP.
+    ENDIF.
+
+*    " 6. 내역
+    LOOP AT GT_ZMDAT9006 INTO GS_ZMDAT9006.
+      LT_MATERIALDESCRIPTION-MATERIAL  = GS_ZMDAT9006-MATNR.
+      LT_MATERIALDESCRIPTION-MATL_DESC = GS_ZMDAT9006-MAKTX.
+      LT_MATERIALDESCRIPTION-LANGU     = GS_ZMDAT9006-SPRAS.
+
+
+      APPEND LT_MATERIALDESCRIPTION.
+    ENDLOOP.
+*     "7. 단위
+    LOOP AT GT_ZMDAT9003 INTO GS_ZMDAT9003.
+      LT_UNITSOFMEASURE-MATERIAL   = GS_ZMDAT9003-MATNR.
+      LT_UNITSOFMEASURE-ALT_UNIT   = GS_ZMDAT9003-MEINH.
+      LT_UNITSOFMEASURE-NUMERATOR  = GS_ZMDAT9003-UMREZ.
+      LT_UNITSOFMEASURE-DENOMINATR = GS_ZMDAT9003-UMREN.
+
+
+      LT_UNITSOFMEASUREX-MATERIAL   = GS_ZMDAT9003-MATNR.
+      LT_UNITSOFMEASUREX-ALT_UNIT   = GS_ZMDAT9003-MEINH.
+      LT_UNITSOFMEASUREX-NUMERATOR  = 'X'.
+      LT_UNITSOFMEASUREX-DENOMINATR = 'X'.
+
+      APPEND LT_UNITSOFMEASURE. CLEAR : LT_UNITSOFMEASURE.
+      APPEND LT_UNITSOFMEASUREX. CLEAR : LT_UNITSOFMEASUREX.
+    ENDLOOP.
+
+*    "8) Tax
+    LOOP AT GT_ZMDAT9007 INTO GS_ZMDAT9007.
+      LT_TAXCLASSIFICATIONS-MATERIAL = GS_ZMDAT9007-MATNR.
+      LT_TAXCLASSIFICATIONS-TAX_TYPE_1 = 'MWST'.
+      LT_TAXCLASSIFICATIONS-DEPCOUNTRY = GS_ZMDAT9007-ALAND.
+      LT_TAXCLASSIFICATIONS-TAXCLASS_1 = GS_ZMDAT9007-TAXM1.
+
+      APPEND LT_TAXCLASSIFICATIONS. CLEAR : LT_TAXCLASSIFICATIONS.
+    ENDLOOP.
+*    CLEAR : LS_TAXCLASSIFICATIONS,
+*    LT_TAXCLASSIFICATIONS.
+*
+*    LS_TAXCLASSIFICATIONS-TAX_TYPE_1 = 'MWST'.
+*    LS_TAXCLASSIFICATIONS-DEPCOUNTRY = LS_ZMDAT9007-ALAND.
+*    LS_TAXCLASSIFICATIONS-TAXCLASS_1 = LS_ZMDAT9007-TAXM1.
+*    APPEND LS_TAXCLASSIFICATIONS TO LT_TAXCLASSIFICATIONS.
+
+    " BAPI 호출
+    CALL FUNCTION 'BAPI_MATERIAL_SAVEREPLICA'
+      EXPORTING
+        NOAPPLLOG           = 'X'
+        NOCHANGEDOC         = ''
+        TESTRUN             = ''
+        INPFLDCHECK         = ''
+      IMPORTING
+        RETURN              = LS_RETURN
+      TABLES
+        HEADDATA            = LT_HEADDATA
+        CLIENTDATA          = LT_CLIENTDATA
+        CLIENTDATAX         = LT_CLIENTDATAX
+        PLANTDATA           = LT_PLANTDATA
+        PLANTDATAX          = LT_PLANTDATAX
+        SALESDATA           = LT_SALESDATA
+        SALESDATAX          = LT_SALESDATAX
+        VALUATIONDATA       = LT_VALUATIONDATA
+        VALUATIONDATAX      = LT_VALUATIONDATAX
+        UNITSOFMEASURE      = LT_UNITSOFMEASURE[]
+        UNITSOFMEASUREX     = LT_UNITSOFMEASUREX[]
+        MATERIALDESCRIPTION = LT_MATERIALDESCRIPTION[]
+        TAXCLASSIFICATIONS  = LT_TAXCLASSIFICATIONS[]
+      EXCEPTIONS
+        OTHERS              = 99.
+
+    " 결과 처리
+    IF LS_RETURN-TYPE = 'S'.
+      " 성공 시 COMMIT
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          WAIT = 'X'.
+
+*      CLEAR : LT_VALUATIONDATAX[], LT_VALUATIONDATAX[].
+*      LOOP AT GT_ZMDAT9004 INTO GS_ZMDAT9004.
+*        LT_VALUATIONDATAX-MATERIAL    = GS_ZMDAT9004-MATNR.
+*        LT_VALUATIONDATAX-VAL_TYPE    = GS_ZMDAT9004-BWKEY."'X'.    " 평가범주
+*        LT_VALUATIONDATA-MATERIAL    = GS_ZMDAT9004-MATNR.
+*        LT_VALUATIONDATA-VAL_TYPE     = GS_ZMDAT9004-BWKEY.    " 평가범주
+*        APPEND LT_VALUATIONDATAx. CLEAR : LT_VALUATIONDATAX.
+*        APPEND LT_VALUATIONDATA.  CLEAR : LT_VALUATIONDATA.
+*      ENDLOOP.
+*    " BAPI 호출
+*    CALL FUNCTION 'BAPI_MATERIAL_SAVEREPLICA'
+*      EXPORTING
+*        NOAPPLLOG           = 'X'
+*        NOCHANGEDOC         = ''
+*        TESTRUN             = ''
+*        INPFLDCHECK         = ''
+*      IMPORTING
+*        RETURN              = LS_RETURN
+*      TABLES
+*        HEADDATA            = LT_HEADDATA
+*        CLIENTDATA          = LT_CLIENTDATA
+*        CLIENTDATAX         = LT_CLIENTDATAX
+*        PLANTDATA           = LT_PLANTDATA
+*        PLANTDATAX          = LT_PLANTDATAX
+*        SALESDATA           = LT_SALESDATA
+*        SALESDATAX          = LT_SALESDATAX
+*        VALUATIONDATA       = LT_VALUATIONDATA
+*        VALUATIONDATAX      = LT_VALUATIONDATAX
+*        UNITSOFMEASURE      = LT_UNITSOFMEASURE[]
+*        UNITSOFMEASUREX     = LT_UNITSOFMEASUREX[]
+*        MATERIALDESCRIPTION = LT_MATERIALDESCRIPTION[]
+*      EXCEPTIONS
+*        OTHERS              = 99.
+*
+*      IF LS_RETURN-TYPE = 'S'.
+*        " 성공 시 COMMIT
+*        CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+*          EXPORTING
+*            WAIT = 'X'.
+*
+*        WRITE : 'S',LS_RETURN-MESSAGE.
+*
+**        GS_EXCEL-MSGTY = 'S'.
+**        GS_EXCEL-MSGTX = |자재 { GS_EXCEL-MATNR } 생성 성공|.
+*      ENDIF.
+    ELSE.
+      " 실패 시 ROLLBACK
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      WRITE : 'E',LS_RETURN-MESSAGE.
+
+*      GS_EXCEL-MSGTY = LS_RETURN-TYPE.
+*      GS_EXCEL-MSGTX = LS_RETURN-MESSAGE.
+    ENDIF.
+
+*    MODIFY GT_EXCEL FROM GS_EXCEL TRANSPORTING MSGTY MSGTX.
+
+  ENDLOOP.
+
+*  WRITE : gs_excel-msgtx.
+
+*  CALL METHOD gr_alv->refresh_table_display.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Module STATUS_0100 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE STATUS_0100 OUTPUT.
+
+
+  SET PF-STATUS 'MAIN'.
+  IF GR_CONTAINER IS INITIAL.
+    CREATE OBJECT GR_CONTAINER
+      EXPORTING
+        CONTAINER_NAME = 'CC_ALV'.
+    CREATE OBJECT GR_ALV
+      EXPORTING
+        I_PARENT = GR_CONTAINER.
+    PERFORM MAKE_FIELDCAT.
+    GS_LAYOUT-ZEBRA = 'X'.
+    CALL METHOD GR_ALV->SET_TABLE_FOR_FIRST_DISPLAY
+      EXPORTING
+        IS_LAYOUT       = GS_LAYOUT
+      CHANGING
+        IT_FIELDCATALOG = GT_FCAT
+        IT_OUTTAB       = GT_EXCEL.
+  ELSE.
+    CALL METHOD GR_ALV->REFRESH_TABLE_DISPLAY.
+  ENDIF.
+
+
+* SET TITLEBAR 'xxx'.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Form select_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM SELECT_DATA .
+  CLEAR : GS_EXCEL, GT_EXCEL.
+  CLEAR : GT_ZMDAT9001, GS_ZMDAT9001,
+  GT_ZMDAT9002, GS_ZMDAT9002,
+  GT_ZMDAT9003, GS_ZMDAT9003,
+  GT_ZMDAT9004, GS_ZMDAT9004,
+  GT_ZMDAT9005, GS_ZMDAT9005,
+  GT_ZMDAT9006, GS_ZMDAT9006,
+  GT_ZMDAT9007, GS_ZMDAT9007.
+
+
+
+*  SELECT a~matnr,
+*               a~mtart,
+*               a~mbrsh,
+*               a~matkl,
+*               a~meins,
+*               a~gewei,
+*               a~spart,
+*               a~prdha,
+*               a~xchpf,
+*               a~bismt,
+*               a~extwg,
+*               a~mfrpn,
+*               a~mtpos_mara
+*    FROM zmdat9001 AS a LEFT JOIN
+*    WHERE a~matnr = @p_matnr
+*    INTO CORRESPONDING FIELDS OF TABLE @gt_excel.
+*
+*  SELECT a~matnr,
+*               a~mtart,
+*               a~mbrsh,
+*               a~matkl,
+*               a~meins,
+*               a~gewei,
+*               a~spart,
+*               a~prdha,
+*               a~xchpf,
+*               a~bismt,
+*               a~extwg,
+*               a~mfrpn,
+*               a~mtpos_mara,
+*               c~werks,
+*               c~ekgrp,
+*               c~kzkup,
+*               c~dismm,
+*               c~dispo,
+*               c~strgr,
+*               c~disls,
+*               c~beskz,
+*               c~dzeit,
+*               c~mtvfp,
+*               c~ladgr,
+*               d~vkorg,
+*               d~vtweg,
+*               d~sktof,
+*               d~prodh,
+*               d~ktgrm,
+*               d~dwerk,
+*               d~mvgr1,
+*               d~mvgr2,
+*               d~mvgr3,
+*               d~mvgr4,
+*               d~mvgr5,
+*               e~maktx
+*    FROM zmdat9001 AS a "INNER JOIN ymdat9999 AS b
+*"    ON a~matnr = b~matnr
+*    LEFT JOIN zmdat9002 AS c
+*    ON a~matnr = c~matnr
+*    LEFT JOIN zmdat9005 AS d
+*    ON a~matnr = d~matnr
+*    LEFT JOIN zmdat9006 AS e
+*    ON a~matnr = e~matnr
+*    WHERE c~werks = @p_werks
+*    AND a~matnr = @p_matnr
+*    AND d~vkorg = @p_vkorg
+*    AND d~vtweg = @p_vtweg
+*    AND e~spras = @sy-langu
+*    INTO CORRESPONDING FIELDS OF TABLE @gt_excel.
+
+
+  " 1) 자재 기준 정보 가져오기
+  SELECT A~MATNR,
+             A~MTART,
+             A~MBRSH,
+             A~MATKL,
+             A~MEINS,
+             A~GEWEI,
+             A~SPART,
+             A~PRDHA,
+             A~XCHPF,
+             A~BISMT,
+             A~EXTWG,
+             A~MFRPN,
+             A~MTPOS_MARA
+    FROM ZMDAT9001 AS A "INNER JOIN ymdat9999 AS b
+    WHERE A~MATNR = @P_MATNR
+    INTO  CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9001.
+
+  LOOP AT GT_ZMDAT9001 ASSIGNING FIELD-SYMBOL(<FS_ZMDAT9001>).
+
+    SELECT COUNT(*)
+      FROM TSPA WHERE SPART = @<FS_ZMDAT9001>-SPART.
+    IF SY-SUBRC NE 0.
+
+      <FS_ZMDAT9001>-SPART = 'A1'.
+
+    ENDIF.
+
+  ENDLOOP.
+
+  " 2) 자재-플랜트 기준 정보 가져오기
+  SELECT A~*
+    FROM ZMDAT9002 AS A
+    WHERE A~MATNR = @P_MATNR
+    AND A~WERKS = @P_WERKS
+    INTO CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9002.
+
+*  LOOP AT GT_ZMDAT9002 ASSIGNING FIELD-SYMBOL(<FS_ZMDAT9002>).
+*
+*    SELECT COUNT(*)
+*      FROM T024D WHERE WERKS = @<FS_ZMDAT9002>-WERKS
+*                   AND DISPO = @<FS_ZMDAT9002>-DISPO.
+*    IF SY-SUBRC NE 0.
+*
+*      <FS_ZMDAT9002>-DISPO = 'Z01'.
+*
+*    ENDIF.
+*
+*  ENDLOOP.
+
+  "3) 자재-영업조직 기준 정보 가져오기
+  SELECT *
+    FROM ZMDAT9005 AS A
+    WHERE A~MATNR = @P_MATNR
+    AND   A~VKORG = @P_VKORG
+    INTO CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9005.
+  LOOP AT GT_ZMDAT9005 ASSIGNING FIELD-SYMBOL(<FS_ZMDAT9005>).
+    IF <FS_ZMDAT9005>-VKORG = 'M000'.
+      <FS_ZMDAT9005>-VKORG = 'MD00'.
+    ENDIF.
+  ENDLOOP.
+
+*  READ TABLE GT_ZMDAT9005 INTO DATA(LS_ZMDAT9005) WITH KEY VKORG = P_VKORG.
+*  IF SY-SUBRC = 0.
+*    DATA(LV_DEL_ZMDAT9005) = ABAP_TRUE.
+*  ENDIF.
+*  IF LV_DEL_ZMDAT9005 = ABAP_TRUE.
+*    DELETE  GT_ZMDAT9005 WHERE VKORG NE P_VKORG.
+*  ENDIF.
+  "4) 자재-단위 기준 정보 가져오기
+  SELECT *
+    FROM ZMDAT9003 AS A
+    WHERE A~MATNR = @P_MATNR
+    INTO CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9003.
+
+  " 5) 평가영역
+  SELECT *
+    FROM ZMDAT9004 AS A
+    WHERE A~MATNR = @P_MATNR
+    AND  A~BWKEY = @P_WERKS
+    INTO CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9004.
+
+  " 6) 자재내역
+  SELECT *
+    FROM ZMDAT9006 AS A
+    WHERE A~MATNR = @P_MATNR
+    INTO CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9006.
+
+  " 7) 자재추가 단위
+  SELECT *
+    FROM ZMDAT9007 AS A
+    WHERE A~MATNR = @P_MATNR
+    INTO CORRESPONDING FIELDS OF TABLE @GT_ZMDAT9007.
+
+*  SELECT *
+*    FROM zmdat9004
+*    WHERE matnr = @p_matnr
+*    AND bwkey = @p_werks
+*    INTO TABLE @DATA(lt_zmdat9004).
+
+  SORT GT_ZMDAT9004 BY MATNR BWKEY BWTAR DESCENDING .
+
+  DELETE ADJACENT DUPLICATES FROM GT_ZMDAT9004 COMPARING MATNR BWKEY.
+
+**  LOOP AT lt_zmdat9001 INTO  DATA(ls_zmdat9001).
+**
+**  ENDLOOP.
+**
+**  LOOP AT gt_excel ASSIGNING FIELD-SYMBOL(<fs_excel>).
+***    SELECT SINGLE *
+***      FROM t023
+***      WHERE matkl = @<fs_excel>-matkl
+***      INTO @DATA(ls_t023).
+***    IF sy-subrc NE 0.
+***      "임시소스
+***      <fs_excel>-matkl = 'A01A01A01'.
+***    ENDIF.
+**
+**
+**
+**    READ TABLE lt_zmdat9004 INTO DATA(ls_zmdat9004) INDEX 1.
+**    IF sy-subrc = 0.
+**
+**      <fs_excel>-bklas = ls_zmdat9004-bklas.
+**      <fs_excel>-bwkey = ls_zmdat9004-bwkey. " 평가영역
+**      <fs_excel>-bwtty = ls_zmdat9004-bwtty.
+**      <fs_excel>-mlast =  ls_zmdat9004-mlast.
+**      <fs_excel>-vprsv = ls_zmdat9004-vprsv.
+**      <fs_excel>-peinh = ls_zmdat9004-peinh.
+**      <fs_excel>-ekalr = ls_zmdat9004-ekalr.
+**
+**    ENDIF.
+**
+***    SELECT SINGLE usr13
+***      FROM zmdt0031
+***      WHERE code = 'MD1000'
+***      AND code1 = @<fs_excel>-mtart
+***      INTO @DATA(lv_usr13).
+***    IF lv_usr13 IS NOT INITIAL.
+***      <fs_excel>-mtart = lv_usr13.
+***    ENDIF.
+**
+**
+**  ENDLOOP.
+
+
+ENDFORM.
+
+* CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+*    EXPORTING
+*      headdata            = ls_headdata
+*      clientdata          = ls_clientdata
+*      clientdatax         = ls_clientdatax
+*      plantdata           = ls_plantdata
+*      plantdatax          = ls_plantdatax
+*      salesdata           = ls_salesdata
+*      salesdatax          = ls_salesdatax
+*    IMPORTING
+*      return              = ls_return.
+*
+*  IF ls_return-type = 'S' OR ls_return-type = 'W'.
+*    CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+*      EXPORTING wait = 'X'.
+*
+*    " 2단계: 평가 데이터 추가 (BAPI_MATERIAL_MAINTAINDATA_RT 사용)
+*    CLEAR: ls_valuationdata, ls_valuationdatax, ls_return.
+*
+*    ls_valuationdata-val_area   = gs_excel-dwerk.
+*    ls_valuationdata-val_type   = gs_excel-bwtty.
+*    ls_valuationdata-val_class  = gs_excel-bklas.
+*    ls_valuationdata-price_ctrl = gs_excel-vprsv.
+*    ls_valuationdata-moving_pr  = gs_excel-mlast.
+*    ls_valuationdata-price_unit = gs_excel-peinh.
+*
+*    ls_valuationdatax-val_area   = 'X'.
+*    ls_valuationdatax-val_type   = 'X'.
+*    ls_valuationdatax-val_class  = 'X'.
+*    ls_valuationdatax-price_ctrl = 'X'.
+*    ls_valuationdatax-moving_pr  = 'X'.
+*    ls_valuationdatax-price_unit = 'X'.
+*
+*    CALL FUNCTION 'BAPI_MATERIAL_SAVEDATA'
+*      EXPORTING
+*        headdata            = ls_headdata
+*        valuationdata       = ls_valuationdata
+*        valuationdatax      = ls_valuationdatax
+*      IMPORTING
+*        return              = ls_return.
+*  ENDIF.
