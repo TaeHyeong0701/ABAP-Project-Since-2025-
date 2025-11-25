@@ -1,0 +1,28 @@
+*&---------------------------------------------------------------------*
+*& Report YLOCAL_COMMODITY_CLASSIFY
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT YLOCAL_COMMODITY_CLASSIFY.
+
+DATA : IT_COMCO_CLS_DISTR TYPE /SAPSLL/API_COMCO_CLS_DISTR_ST WITH HEADER LINE.
+DATA : ET_MESSAGES TYPE BAPIRET2_T.
+
+CLEAR : IT_COMCO_CLS_DISTR.
+
+IT_COMCO_CLS_DISTR-MATNR = '6915L-0790D'.
+IT_COMCO_CLS_DISTR-STCTS = 'JP01'.      " ZMDAT9102-WERKS를 T001W-LAND1로 조인하여, 가져옴 + "01"
+IT_COMCO_CLS_DISTR-COMCO = '2905110000'. "ZMDAT9102-STAWN
+APPEND IT_COMCO_CLS_DISTR.
+
+CALL FUNCTION '/SAPSLL/API_COMCO_CLS_DISTR'
+  EXPORTING
+    IT_COMCO_CLS_DISTR       = IT_COMCO_CLS_DISTR[]
+
+*   IV_INITIAL_RUN           =
+ IMPORTING
+   ET_MESSAGES              = ET_MESSAGES[]
+          .
+
+BREAK-POINT.
+COMMIT WORK.
