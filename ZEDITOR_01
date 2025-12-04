@@ -1,11 +1,11 @@
 PROGRAM ZEDITOR.        " FIRST PROGRAM SOURCE
-* ECC: 표준 특성값을 사용하는 자재마스터
 
 *------------------------------Data-----------------------------*
 DATA : BEGIN OF LT_TAB OCCURS 0 ,
   MATNR TYPE MATNR,
   ATINN TYPE ATINN,
   ATWRT TYPE ATWRT,
+  WERKS TYPE WERKS_D,
   END OF LT_TAB.
 
 
@@ -13,10 +13,14 @@ DATA : BEGIN OF LT_TAB OCCURS 0 ,
 FORM DYN1.                      "Starting
 
   SELECT A~MATNR
+               C~WERKS
                 B~ATINN
     FROM MARA AS A INNER JOIN AUSP AS B
     ON A~MATNR = B~OBJEK
-    INTO CORRESPONDING FIELDS OF TABLE  LT_TAB.
+    INNER JOIN MARC AS C
+    ON A~MATNR = C~MATNR
+    INTO CORRESPONDING FIELDS OF TABLE  LT_TAB
+    WHERE A~MATNR = '000000000030010677'.
 
     BREAK-POINT .
 
