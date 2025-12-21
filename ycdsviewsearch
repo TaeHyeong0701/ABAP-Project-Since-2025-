@@ -1,0 +1,167 @@
+*&---------------------------------------------------------------------*
+*& Report YABAP07_CDS
+*&---------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+REPORT yabap07_cds NO STANDARD PAGE HEADING MESSAGE-ID zmm1.
+
+TABLES dd03l.
+DATA: w_layout   TYPE slis_layout_alv,
+      fieldcat   TYPE slis_t_fieldcat_alv WITH HEADER LINE,
+      t_alv_sort TYPE slis_t_sortinfo_alv.
+*--------------------------------------------------------------------*
+
+SELECTION-SCREEN BEGIN OF BLOCK b1.
+  SELECTION-SCREEN BEGIN OF LINE.
+    SELECTION-SCREEN COMMENT (28) TEXT-001 FOR FIELD s_field1.
+    SELECT-OPTIONS: s_field1 FOR dd03l-fieldname NO INTERVALS OBLIGATORY.
+  SELECTION-SCREEN END OF LINE.
+  SELECT-OPTIONS: s_cds FOR dd03l-fieldname,
+                  s_sql FOR dd03l-fieldname.
+SELECTION-SCREEN END OF BLOCK b1.
+*--------------------------------------------------------------------*
+
+INITIALIZATION.
+  PERFORM initialization.
+*--------------------------------------------------------------------*
+
+START-OF-SELECTION.
+  SELECT DISTINCT a~ddlname,
+                  a~objectname,
+                  a~objecttype,
+                  b~tabname,
+                  b~fieldname,
+                  b~keyflag,
+                  b~mandatory,
+                  b~rollname,
+                  c~ddtext,
+                  c2~ddtext AS ddtext_k
+    FROM ddldependency AS a
+    INNER JOIN dd03l AS b ON b~tabname EQ a~objectname
+                         AND b~as4local EQ a~state
+    LEFT OUTER JOIN ddddlsrc02bt AS c ON c~ddlname EQ a~ddlname
+                                     AND c~ddlanguage EQ @sy-langu
+    LEFT OUTER JOIN ddddlsrc02bt AS c2 ON c2~ddlname EQ a~ddlname
+                                      AND c2~ddlanguage EQ '3'
+    WHERE b~rollname  IN @s_field1
+     AND a~ddlname    IN @s_cds
+     AND a~objectname IN @s_sql
+    INTO TABLE @DATA(lt_cds).
+
+  PERFORM get_fieldcatalog.
+  PERFORM sort_alv.
+
+  IF lt_cds IS INITIAL.
+    "-- Data not found !.
+    MESSAGE s005 DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ELSE.
+    DATA(lv_lines) = lines( lt_cds ).
+    "-- Successfully displayed &1 items.
+    MESSAGE s077 WITH lv_lines.
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+        i_callback_program = sy-repid
+        is_layout          = w_layout
+        it_fieldcat        = fieldcat[]
+        it_sort            = t_alv_sort
+      TABLES
+        t_outtab           = lt_cds
+      EXCEPTIONS
+        program_error      = 1
+        OTHERS             = 2.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form initialization
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM initialization .
+
+*  s_cds[] = VALUE #( ( sign = 'I' option = 'CP' low = 'I_PUR*' ) ).
+  s_sql[] = VALUE #( ( sign = 'I' option = 'CP' low = 'I*' ) ).
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_fieldcatalog
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_fieldcatalog.
+
+  w_layout-colwidth_optimize = abap_true.
+  w_layout-zebra  = abap_true.
+
+  CLEAR: fieldcat.
+  fieldcat-seltext_m  = 'CDS view'.
+  fieldcat-fieldname  = 'DDLNAME'.
+  APPEND fieldcat TO fieldcat.
+
+  CLEAR: fieldcat.
+  fieldcat-seltext_m  = 'SQL view'.
+  fieldcat-fieldname  = 'OBJECTNAME'.
+  APPEND fieldcat TO fieldcat.
+
+  CLEAR: fieldcat.
+  fieldcat-seltext_m  = 'Field Name'.
+  fieldcat-fieldname  = 'FIELDNAME'.
+  APPEND fieldcat TO fieldcat.
+
+  CLEAR: fieldcat.
+  fieldcat-seltext_m  = 'Data Element'.
+  fieldcat-fieldname  = 'ROLLNAME'.
+  fieldcat-just       = 'C'.
+  APPEND fieldcat TO fieldcat.
+
+  CLEAR: fieldcat.
+  fieldcat-seltext_m  = 'CDS View TEXT'.
+  fieldcat-fieldname  = 'DDTEXT'.
+  APPEND fieldcat TO fieldcat.
+
+  CLEAR: fieldcat.
+  fieldcat-seltext_m  = 'CDS View 내역'.
+  fieldcat-fieldname  = 'DDTEXT_K'.
+  APPEND fieldcat TO fieldcat.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form sort_alv
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM sort_alv .
+
+  DATA: l_sort TYPE slis_sortinfo_alv.
+*--------------------------------------------------------------------*
+
+  CLEAR l_sort.
+  l_sort-spos = '1'.
+  l_sort-fieldname = 'DDLNAME'.
+  l_sort-up = 'X'.
+  APPEND l_sort TO t_alv_sort.
+
+  CLEAR l_sort.
+  l_sort-spos = '2'.
+  l_sort-fieldname = 'OBJECTNAME'.
+  l_sort-up = 'X'.
+  APPEND l_sort TO t_alv_sort.
+
+  CLEAR l_sort.
+  l_sort-spos = '3'.
+  l_sort-fieldname = 'ROLLNAME'.
+  l_sort-up = 'X'.
+  APPEND l_sort TO t_alv_sort.
+
+ENDFORM.
