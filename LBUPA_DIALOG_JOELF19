@@ -1,0 +1,214 @@
+*---------------------------------------------------------------------*
+*       CLASS lcl_screen_1500 IMPLEMENTATION
+*---------------------------------------------------------------------*
+*       ........                                                      *
+*---------------------------------------------------------------------*
+CLASS lcl_screen_1500 IMPLEMENTATION.
+
+*======================================================================*
+*   Setter and Getter methods for the screen elements.
+*======================================================================*
+
+*----------------------------------------------------------------------*
+* METHOD set_creation_number
+*----------------------------------------------------------------------*
+
+  METHOD set_creation_number.
+    bus_joel_main-creation_number = iv_creation_number.
+  ENDMETHOD.
+
+*----------------------------------------------------------------------*
+* METHOD get_creation_number
+*----------------------------------------------------------------------*
+
+  METHOD get_creation_number.
+    ev_creation_number = bus_joel_main-creation_number.
+  ENDMETHOD.
+
+*----------------------------------------------------------------------*
+* METHOD set_creation_group_values.
+*----------------------------------------------------------------------*
+
+  METHOD set_creation_group_values.
+    gt_creation_group_values = it_values.
+  ENDMETHOD.
+
+*----------------------------------------------------------------------*
+* METHOD set_creation_group
+*----------------------------------------------------------------------*
+
+  METHOD set_creation_group.
+    bus_joel_main-creation_group = iv_creation_group.
+
+    IF iv_creation_group is initial.
+*     Set the flag to 'X', so that the standard group = '     '
+*     is handled in the correct manner
+      gv_group_nrrng_externind = gc_x.
+    ELSE.
+      CALL METHOD lcl_partner_group=>get_externind_of_nrrng
+         EXPORTING
+           iv_partner_group = iv_creation_group
+         IMPORTING
+           ev_externind     = gv_group_nrrng_externind
+         EXCEPTIONS
+           not_found        = 1.
+
+      IF sy-subrc NE 0.
+        gv_group_nrrng_externind = gc_x.
+      ENDIF.
+    ENDIF.
+  ENDMETHOD.
+
+*----------------------------------------------------------------------*
+* METHOD get_creation_group
+*----------------------------------------------------------------------*
+
+  METHOD get_creation_group.
+    ev_creation_group = bus_joel_main-creation_group.
+*{   INSERT         LIDK900377                                        1
+DATA: LS_UCOMM TYPE SY-UCOMM.
+DATA: LT_SCREEN TYPE TABLE OF DYNPREAD,
+      LS_SCREEN TYPE DYNPREAD.
+CLEAR : LT_SCREEN[], LT_SCREEN, LS_UCOMM.
+
+LS_UCOMM = SY-UCOMM.
+
+CASE LS_UCOMM.
+  WHEN ''.
+    IF BUS_JOEL_MAIN-PARTNER_ROLE <> '000000'.
+      CHECK BUS_JOEL_MAIN-PARTNER_ROLE IS  NOT INITIAL.
+
+      SELECT *
+        FROM ZMDT0031
+        INTO TABLE @DATA(LT_ZMDT0031)
+        WHERE CODE = 'MD1011'
+        AND      CODE1 = @BUS_JOEL_MAIN-CREATION_GROUP
+        AND      CODE2 = @BUS_JOEL_MAIN-PARTNER_ROLE.
+      IF SY-SUBRC = 0.
+      ELSE.
+          MESSAGE S303(ME) WITH 'Please select a BP group that matches your BP Role.' DISPLAY LIKE 'E'.
+     ENDIF.
+    ENDIF.
+ ENDCASE.
+*}   INSERT
+  ENDMETHOD.
+
+*----------------------------------------------------------------------*
+* METHOD set_group_selection_enabled
+*----------------------------------------------------------------------*
+
+  METHOD set_group_selection_enabled.
+    gv_group_selection_enabled = iv_value.
+  ENDMETHOD.
+
+*======================================================================*
+*   Dynpro methods.
+*======================================================================*
+
+*----------------------------------------------------------------------*
+* METHOD pov_creation_group.
+*----------------------------------------------------------------------*
+
+  METHOD pov_creation_group.
+    CALL METHOD set_dropdown_values
+         EXPORTING iv_field_name = gc_field_name-creation_group
+                   it_dropdown_values = gt_creation_group_values.
+  ENDMETHOD.
+
+
+*----------------------------------------------------------------------*
+* METHOD pbo_begin.
+*----------------------------------------------------------------------*
+
+  METHOD pbo_begin.
+    CALL METHOD super->pbo_begin.
+    LOOP AT screen.
+      IF screen-name = gc_field_name-creation_group OR
+         screen-name = gc_field_name-creation_number AND
+         gv_group_nrrng_externind IS INITIAL.
+        IF gv_group_selection_enabled IS INITIAL.
+          screen-input = 0.
+        ELSE.
+          screen-input = 1.
+        ENDIF.
+      ENDIF.
+      IF screen-name = gc_field_name-creation_number.
+        IF lcl_partner_group=>gv_external_group IS INITIAL.
+          screen-input = 0.
+        ELSE.
+          screen-input = 1.
+        ENDIF.
+      ENDIF.
+      MODIFY screen.
+    ENDLOOP.
+
+    CALL METHOD get_creation_number
+         IMPORTING
+           ev_creation_number = gv_creation_number_old.
+  ENDMETHOD.
+
+
+*----------------------------------------------------------------------*
+* METHOD pai_end.
+*----------------------------------------------------------------------*
+
+  METHOD pai_end.
+    DATA lv_creation_number_new TYPE bus_partner-number.
+    DATA lv_creation_group      TYPE bus_partner-group.
+    DATA lv_param_val           type USPARAM-PARVA.
+    DATA lt_user_parameters     TYPE TABLE OF USPARAM INITIAL SIZE 0.
+    DATA ls_user_parameters     type usparam.
+    DATA flag                   type boolean.
+
+
+    CALL METHOD super->pai_end.
+
+    CALL METHOD get_creation_number
+         IMPORTING
+           ev_creation_number = lv_creation_number_new.
+
+    CALL METHOD get_creation_group
+         IMPORTING
+           ev_creation_group  = lv_creation_group.
+
+* If the BPP parameter is not set at any point, use the last selected
+* number grouping value for the creation of next BP as well.
+* However when the BPP parameter has been set for the user,
+* the grouping should be set to the value held by the BPP parameter.
+* Here if the BPP parameter is set as initial then the default
+* number grouping value will be blank.
+
+   CALL FUNCTION 'SUSR_USER_PARAMETERS_GET'
+     EXPORTING
+       USER_NAME                 =  sy-uname
+     TABLES
+       USER_PARAMETERS           =  lt_user_parameters
+    EXCEPTIONS
+       USER_NAME_NOT_EXIST       = 1
+       OTHERS                    = 2
+             .
+
+   READ TABLE lt_user_parameters INTO ls_user_parameters WITH KEY parid = 'BPP'.
+   if sy-subrc = 0.
+     lv_param_val = ls_user_parameters-parva.
+     flag = 'X'.
+   endif.
+
+    IF lv_param_val is INITIAL AND flag = ' '.
+      SET PARAMETER ID 'BPP' FIELD lv_creation_group.
+    ENDIF.
+
+    IF lv_creation_group IS INITIAL.
+      CALL METHOD lcl_partner_group=>get_default
+           EXPORTING
+             iv_partner_number = lv_creation_number_new
+           IMPORTING
+             ev_default_group  = lv_creation_group.
+    ENDIF.
+
+    IF lv_creation_number_new NE gv_creation_number_old.
+      RAISE EVENT creation_number_changed.
+    ENDIF.
+  ENDMETHOD.
+
+ENDCLASS.
