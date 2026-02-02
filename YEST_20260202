@@ -1,0 +1,22 @@
+SELECT A~mtart
+       B~werks
+       B~prctr
+       COUNT(*) AS cnt
+  INTO CORRESPONDING FIELDS OF TABLE lt_prctr
+  FROM mseg AS A
+  INNER JOIN mara AS B
+    ON A~matnr = B~matnr
+  INNER JOIN marc AS C
+    ON A~matnr = C~matnr
+   AND B-werks = C~werks
+  INNER JOIN mkpf AS d
+  ON a~mblnr = d~mblnr
+  AND a~mjahr = d~mjahr
+  AND a~zeile  = D~ZEILE
+  WHERE C~mtart IN ( 'HUBM', 'HAWA', 'HUBJ' )
+    AND d~budat BETWEEN '20230101' AND '20250131'
+    AND A~prctr <> ''
+    AND C~prctr = ''
+  GROUP BY B~mtart
+           A~werks
+           a~prctr.
