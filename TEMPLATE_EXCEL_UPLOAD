@@ -1,0 +1,218 @@
+*&---------------------------------------------------------------------*
+*& Report Z_[PROGRAM_NAME]_EXCEL_UPLOAD
+*&---------------------------------------------------------------------*
+*& Excel Upload Program Template
+*& 작성일: [YYYY-MM-DD]
+*& 작성자: [작성자명]
+*& 목적: [프로그램 목적 설명]
+*& 대상테이블: [테이블명]
+*&---------------------------------------------------------------------*
+REPORT Z_[PROGRAM_NAME]_EXCEL_UPLOAD.
+
+TYPE-POOLS: TRUXS, SLIS.
+
+"=========================
+" TYPE 정의
+"=========================
+TYPES: BEGIN OF TY_EXCEL,
+         " TODO: 업로드할 필드 정의
+         " 예시:
+         " FIELD1 TYPE [DATA_TYPE],  "A열 - [설명]
+         " FIELD2 TYPE [DATA_TYPE],  "B열 - [설명]
+         " FIELD3 TYPE [DATA_TYPE],  "C열 - [설명]
+         
+         " 필수 필드 (처리 결과 메시지용)
+         MSGTY      TYPE BAPI_MTYPE,
+         MSGTX      TYPE BAPI_MSG,
+       END OF TY_EXCEL.
+
+DATA: GT_EXCEL TYPE STANDARD TABLE OF TY_EXCEL,
+      GS_EXCEL TYPE TY_EXCEL.
+
+" ALV 관련 변수
+DATA: GR_ALV       TYPE REF TO CL_GUI_ALV_GRID,
+      GR_CONTAINER TYPE REF TO CL_GUI_CUSTOM_CONTAINER.
+
+DATA: GT_FCAT   TYPE LVC_T_FCAT,
+      GS_FCAT   TYPE LVC_S_FCAT,
+      GS_LAYOUT TYPE LVC_S_LAYO.
+
+PARAMETERS: P_FILE TYPE RLGRAP-FILENAME OBLIGATORY.
+
+"=========================
+" SELECTION SCREEN
+"=========================
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR P_FILE.
+  CALL FUNCTION 'F4_FILENAME'
+    IMPORTING
+      FILE_NAME = P_FILE.
+
+"=========================
+" MAIN LOGIC
+"=========================
+START-OF-SELECTION.
+  PERFORM UPLOAD_EXCEL.
+  PERFORM DISPLAY_ALV.
+
+"=========================
+" EXCEL 업로드 처리
+"=========================
+FORM UPLOAD_EXCEL.
+  DATA: LT_RAW TYPE TABLE OF ALSMEX_TABLINE,
+        LS_RAW TYPE ALSMEX_TABLINE.
+
+  " Excel 파일을 내부 테이블로 변환
+  CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+    EXPORTING
+      FILENAME    = P_FILE
+      I_BEGIN_COL = 1
+      I_BEGIN_ROW = 3          " 3행부터 데이터 시작 (1행:제목, 2행:헤더)
+      I_END_COL   = [컬럼수]   " TODO: 실제 컬럼 수로 변경
+      I_END_ROW   = 100000
+    TABLES
+      INTERN      = LT_RAW.
+
+  " 내부 테이블로 데이터 매핑
+  LOOP AT LT_RAW INTO LS_RAW.
+    CASE LS_RAW-COL.
+      " TODO: 각 컬럼별로 필드 매핑
+      " WHEN 1. GS_EXCEL-FIELD1 = LS_RAW-VALUE.
+      " WHEN 2. GS_EXCEL-FIELD2 = LS_RAW-VALUE.
+      " WHEN 3. GS_EXCEL-FIELD3 = LS_RAW-VALUE.
+    ENDCASE.
+    
+    AT END OF ROW.
+      " 행 단위 데이터 검증
+      PERFORM VALIDATE_DATA.
+      
+      " 검증 통과시 테이블에 추가
+      IF GS_EXCEL-MSGTY IS INITIAL.
+        APPEND GS_EXCEL TO GT_EXCEL.
+      ELSE.
+        " 에러가 있어도 결과 표시를 위해 추가
+        APPEND GS_EXCEL TO GT_EXCEL.
+      ENDIF.
+      
+      CLEAR GS_EXCEL.
+    ENDAT.
+  ENDLOOP.
+
+  " 데이터 처리
+  IF GT_EXCEL IS NOT INITIAL.
+    PERFORM PROCESS_DATA.
+  ELSE.
+    MESSAGE 'Excel 파일에 데이터가 없습니다.' TYPE 'S' DISPLAY LIKE 'E'.
+  ENDIF.
+
+ENDFORM.
+
+"=========================
+" 데이터 검증
+"=========================
+FORM VALIDATE_DATA.
+  " TODO: 비즈니스 로직에 따른 데이터 검증
+  " 예시:
+  " IF GS_EXCEL-FIELD1 IS INITIAL.
+  "   GS_EXCEL-MSGTY = 'E'.
+  "   GS_EXCEL-MSGTX = '[필드명]는 필수입력 항목입니다.'.
+  "   RETURN.
+  " ENDIF.
+
+ENDFORM.
+
+"=========================
+" 데이터 처리
+"=========================
+FORM PROCESS_DATA.
+  " TODO: 실제 데이터 처리 로직 구현
+  " 예시 1: 데이터베이스 테이블 업데이트
+  " DATA: LT_TARGET TYPE TABLE OF [테이블명],
+  "       LS_TARGET LIKE LINE OF LT_TARGET.
+  "
+  " MOVE-CORRESPONDING GT_EXCEL[] TO LT_TARGET[].
+  " MODIFY [테이블명] FROM TABLE LT_TARGET.
+  "
+  " IF SY-SUBRC = 0.
+  "   MESSAGE '데이터가 성공적으로 저장되었습니다.' TYPE 'S'.
+  " ELSE.
+  "   MESSAGE '데이터 저장 중 오류가 발생했습니다.' TYPE 'E'.
+  " ENDIF.
+
+  " 예시 2: BAPI 호출
+  " DATA: LV_RETURN TYPE BAPIRET2.
+  " LOOP AT GT_EXCEL INTO GS_EXCEL WHERE MSGTY IS INITIAL.
+  "   CALL FUNCTION '[BAPI_NAME]'
+  "     IMPORTING
+  "       RETURN = LV_RETURN
+  "     ...
+  "   
+  "   IF LV_RETURN-TYPE = 'E' OR LV_RETURN-TYPE = 'A'.
+  "     GS_EXCEL-MSGTY = LV_RETURN-TYPE.
+  "     GS_EXCEL-MSGTX = LV_RETURN-MESSAGE.
+  "   ELSE.
+  "     GS_EXCEL-MSGTY = 'S'.
+  "     GS_EXCEL-MSGTX = '처리 성공'.
+  "   ENDIF.
+  "   
+  "   MODIFY GT_EXCEL FROM GS_EXCEL.
+  " ENDLOOP.
+
+ENDFORM.
+
+"=========================
+" ALV 출력
+"=========================
+FORM DISPLAY_ALV.
+  " Field Catalog 설정
+  PERFORM BUILD_FIELDCAT.
+
+  " Layout 설정
+  GS_LAYOUT-ZEBRA      = 'X'.  " 줄무늬 표시
+  GS_LAYOUT-CWIDTH_OPT = 'X'.  " 컬럼 너비 자동 조정
+
+  " ALV 출력
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      I_CALLBACK_PROGRAM = SY-REPID
+      IS_LAYOUT          = GS_LAYOUT
+      IT_FIELDCAT        = GT_FCAT
+    TABLES
+      T_OUTTAB           = GT_EXCEL
+    EXCEPTIONS
+      PROGRAM_ERROR      = 1
+      OTHERS             = 2.
+
+  IF SY-SUBRC <> 0.
+    MESSAGE 'ALV 출력 중 오류가 발생했습니다.' TYPE 'E'.
+  ENDIF.
+
+ENDFORM.
+
+"=========================
+" Field Catalog 구성
+"=========================
+FORM BUILD_FIELDCAT.
+  " TODO: 각 필드별 Field Catalog 설정
+  " 예시:
+  " CLEAR GS_FCAT.
+  " GS_FCAT-FIELDNAME = 'FIELD1'.
+  " GS_FCAT-SELTEXT_L = '[필드 설명]'.
+  " GS_FCAT-COL_POS   = 1.
+  " APPEND GS_FCAT TO GT_FCAT.
+  
+  " 메시지 타입 필드
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'MSGTY'.
+  GS_FCAT-SELTEXT_L = '메시지타입'.
+  GS_FCAT-COL_POS   = 90.
+  APPEND GS_FCAT TO GT_FCAT.
+
+  " 메시지 텍스트 필드
+  CLEAR GS_FCAT.
+  GS_FCAT-FIELDNAME = 'MSGTX'.
+  GS_FCAT-SELTEXT_L = '메시지'.
+  GS_FCAT-COL_POS   = 91.
+  APPEND GS_FCAT TO GT_FCAT.
+
+ENDFORM.
